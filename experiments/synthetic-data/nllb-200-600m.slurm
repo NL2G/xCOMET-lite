@@ -17,7 +17,7 @@ echo "============="
 python ./synthetic-data/gen_translations.py \
     --model="facebook/nllb-200-distilled-600M" \
     --nbits=4 \
-    --sample=15000 \
+    --sample=20000 \
     --save_path="./synthetic-data/data/he-en-nllb600m.csv" \
     --batch_size=16
 
