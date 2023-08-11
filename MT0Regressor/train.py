@@ -6,6 +6,7 @@ import torch.nn as nn
 import wandb
 from torch.optim import AdamW
 from tqdm import tqdm
+import datetime
 from transformers import get_scheduler
 
 from MT0Regressor import MT0Regressor, Args
@@ -14,19 +15,28 @@ from accelerate import Accelerator
 
 
 def main(model, dataloader_train, dataloader_eval, optimizer,
-         scheduler, metric, progress_bar_train, progress_bar_eval):
-    accelerator = Accelerator()
+         scheduler, metric, num_epochs, num_training_steps):
+    accelerator = Accelerator(log_with='wandb')
+    accelerator.init_trackers(
+        project_name="t5regressor", 
+        init_kwargs={'entity': 'airi23-efficient-llm-metrics'}
+    )
 
     model, optimizer, dataloader_train, scheduler = accelerator.prepare(model, optimizer, dataloader_train, scheduler)
 
-    print(f"Train size: {len(dataloader_train)}")
-    print(f"Eval size: {len(dataloader_eval)}")
+    accelerator.print(f"Train size: {len(dataloader_train)}")
+    accelerator.print(f"Eval size: {len(dataloader_eval)}")
+
+    progress_bar_train = tqdm(range(num_training_steps), disable=not accelerator.is_local_main_process)
+    progress_bar_eval = tqdm(range(num_epochs * len(dataloader_eval)), disable=not accelerator.is_local_main_process)
+
+    accelerator.wait_for_everyone()
 
     for epoch in range(num_epochs):
-        print(f"TRAIN EPOCH {epoch + 1}")
+        accelerator.print(f"TRAIN EPOCH {epoch + 1}")
         model.train()
         for batch in dataloader_train:
-            batch = {k: v.to(device) for k, v in batch.items()}
+            #batch = {k: v.to(device) for k, v in batch.items()}
             outputs = model(**batch)
 
             loss = outputs[2]
@@ -41,45 +51,52 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
             )
             progress_bar_train.update(1)
 
-            wandb.log({"loss": loss.item()})
+            accelerator.log({"loss": loss.item()})
 
-        print("EVAL")
+        accelerator.print("EVAL")
         model.eval()
         mse_metrics = []
         predicted = []
         labels = []
-        for batch in dataloader_eval:
-            batch = {k: v.to(device) for k, v in batch.items()}
+        if accelerator.is_local_main_process:
+            for batch in dataloader_eval:
+                batch = {k: v.to(accelerator.device) for k, v in batch.items()}
 
-            with torch.no_grad():
-                outputs = model(**batch)
+                with torch.no_grad():
+                    outputs = model(**batch)
 
-            logits = outputs[1]
+                    logits = outputs[1]
 
-            mse_metric = metric(logits, batch["labels"]).item()
-            for i in range(8):
-                predicted.append(logits[i].item())
-                labels.append(batch["labels"][i].item())
-            mse_metrics.append(mse_metric)
-            progress_bar_eval.set_postfix({"loss": mse_metric})
-            progress_bar_eval.update(1)
+                    mse_metric = metric(logits, batch["labels"]).item()
 
-        print(f"Eval MSE: {mean(mse_metrics)}")
-        print(f"Eval Kendall tau-b: {stats.kendalltau(predicted, labels)[0]}")
+                for i in range(8):
+                    predicted.append(logits[i].item())
+                    labels.append(batch["labels"][i].item())
+                mse_metrics.append(mse_metric)
+                progress_bar_eval.set_postfix({"loss": mse_metric})
+                progress_bar_eval.update(1)
 
-    torch.save(model.state_dict(), "checkpoints/model_arc_simple_4.pt")
+            eval_mse = mean(mse_metrics)
+            eval_kendall = stats.kendalltau(predicted, labels)[0].statistic
+            accelerator.print(f"Eval MSE: {eval_mse}")
+            accelerator.print(f"Eval Kendall tau-b: {eval_kendall}")
+            accelerator.log({"eval/mse": eval_mse, "eval/kendall": eval_kendall})
+        
+        accelerator.wait_for_everyone()
+
+    if accelerator.is_local_main_process:
+        accelerator.save(model.state_dict(), f"model_large.pth")
 
 
 if __name__ == "__main__":
-    wandb.login()
-    wandb.init(entity="airi23-efficient-llm-metrics", project="t5regressor")
+    
 
     model_encoder_name = "bigscience/mt0-large"
-    device = "cuda:0"
+    #device = "cuda:0"
 
     config = Args(
         encoder_name=model_encoder_name,
-        sizes_mlp=[768, 192, 48, 1],
+        sizes_mlp=[1024, 192, 48, 1],
         hidden_act=nn.Tanh,
         dropout_coef=0.1,
         need_lora=False,
@@ -88,7 +105,7 @@ if __name__ == "__main__":
     )
 
     model = MT0Regressor(config)
-    model.to(device)
+    #model.to(device)
 
     print("Model successfully loaded.")
 
@@ -107,10 +124,8 @@ if __name__ == "__main__":
         num_warmup_steps=0,
         num_training_steps=num_training_steps,
     )
-    progress_bar_train = tqdm(range(num_training_steps))
-    progress_bar_eval = tqdm(range(num_epochs * len(dataloader_eval)))
+    
     metric = nn.MSELoss()
 
     main(model=model, dataloader_train=dataloader_train, dataloader_eval=dataloader_eval, optimizer=optimizer,
-         scheduler=lr_scheduler, metric=metric, progress_bar_train=progress_bar_train,
-         progress_bar_eval=progress_bar_train)
+         scheduler=lr_scheduler, metric=metric, num_epochs=num_epochs, num_training_steps=num_training_steps)
