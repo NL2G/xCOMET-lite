@@ -92,8 +92,8 @@ if __name__ == "__main__":
 
     print("Model successfully loaded.")
 
-    dataloader_train = torch.load('dataloader_train.pth')
-    dataloader_eval = torch.load('dataloader_eval.pth')
+    dataloader_train = torch.load('dataloader_train_large.pth')
+    dataloader_eval = torch.load('dataloader_eval_large.pth')
 
     print("DataLoaders successfully loaded.")
 
