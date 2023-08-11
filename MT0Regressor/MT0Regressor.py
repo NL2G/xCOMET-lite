@@ -1,4 +1,3 @@
-import loralib as lora
 import torch
 import torch.nn as nn
 from transformers import MT5EncoderModel
@@ -31,19 +30,14 @@ class MT0Regressor(nn.Module):
         super(MT0Regressor, self).__init__()
 
         self.llm = MT5EncoderModel.from_pretrained(
-            config.encoder_name, output_attentions=True, 
-            device_map="auto", output_hidden_states=True)
+            config.encoder_name, output_attentions=True, output_hidden_states=True)
 
         dropout_coef = config.dropout_coef
 
         self.dropout_input = nn.Dropout(dropout_coef)
         layers = []
         for i in range(len(config.sizes_mlp) - 1):
-            if config.need_lora:
-                layers.append(lora.Linear(config.sizes_mlp[i],
-                                          config.sizes_mlp[i + 1], r=16))
-            else:
-                layers.append(nn.Linear(config.sizes_mlp[i],
+            layers.append(nn.Linear(config.sizes_mlp[i],
                                         config.sizes_mlp[i + 1]))
             if i < len(config.sizes_mlp) - 2:
                 layers.append(config.hidden_act())
