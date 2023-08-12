@@ -77,7 +77,7 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
                 progress_bar_eval.update(1)
 
             eval_mse = mean(mse_metrics)
-            eval_kendall = stats.kendalltau(predicted, labels)[0].statistic
+            eval_kendall = stats.kendalltau(predicted, labels).statistic
             accelerator.print(f"Eval MSE: {eval_mse}")
             accelerator.print(f"Eval Kendall tau-b: {eval_kendall}")
             accelerator.log({"eval/mse": eval_mse, "eval/kendall": eval_kendall})
