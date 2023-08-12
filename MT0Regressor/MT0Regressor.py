@@ -53,7 +53,7 @@ class MT0Regressor(nn.Module):
         outputs = self.llm(input_ids=input_ids, attention_mask=attention_mask)
         # print(outputs)
         embeddings = mean_pooling(
-            outputs.last_hidden_state, outputs.attentions[-1][:, 0, :, 0]
+            outputs.last_hidden_state, attention_mask=attention_mask
         )
 
         outputs_sequence = self.dropout_input(embeddings)
