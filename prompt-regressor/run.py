@@ -103,11 +103,12 @@ def get_optimizer(
 
         optimizer_kwargs = {
             "lr": lr,
-            "eps": eps,
             "is_paged": is_paged,
             "optim_bits": 8,
             "betas": betas,
         }
+        if not is_lion:
+            optimizer_kwargs["eps"] = eps
 
         optimizer = optim_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
@@ -383,7 +384,7 @@ def main():
         if args.subsample_val > 0:
             dataset['test'] = dataset['test'].shuffle(seed=args.seed).select(range(args.subsample_val))
 
-        dataset = dataset.sort(column_names=["len"])
+        dataset = dataset.sort(column_names=["len"], reverse=True)
         dataset = dataset.remove_columns(["len"])
 
     accelerate.wait_for_everyone()
@@ -461,7 +462,13 @@ def main():
     for epoch in range(args.epochs):
         logger.info(f"Epoch {epoch + 1}")
         model.train()
-        for i, batch in enumerate(train_dataloader):
+        for i, batch in enumerate(tqdm(
+            train_dataloader, 
+            mininterval=30, 
+            maxinterval=120,
+            desc=f"Epoch {epoch + 1}",
+            disable=not accelerate.is_main_process,
+        )):
             with accelerate.accumulate(model):
                 labels = batch.pop("labels")
                 outputs = model(**batch)
