@@ -88,33 +88,15 @@ if __name__ == '__main__':
     test_dataloader = DataLoader(wmtcl_test_dset, batch_size=TEST_BATCH_SIZE, shuffle=False, pin_memory=True, collate_fn=test_collator)
 
     model = MT5EncoderModel.from_pretrained(MT0_MODEL)
-
-    max_memory = get_balanced_memory(
-        model,
-        max_memory=None,
-        no_split_module_classes=['MT5LayerSelfAttention', 'MT5LayerFF'],
-        dtype='float16',
-        low_zero=True,
-    )
-
-    device_map = infer_auto_device_map(
-        model,
-        max_memory=max_memory,
-        no_split_module_classes=['MT5LayerSelfAttention', 'MT5LayerFF'],
-        dtype='float16'
-    )
-
-    model = dispatch_model(model, device_map=device_map)
     model.gradient_checkpointing_enable()
 
-    optimizer = bnb.optim.Adam8bit(
-        model.parameters(),
-        weight_decay=1e-6
+    optimizer = torch.optim.AdamW(
+        model.parameters()
     )
-    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=1000, num_training_steps=(N_EPOCHS * len(wmtcl_train_dset)))
+    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=1000, num_training_steps=(N_EPOCHS * len(train_dataloader)))
     loss = ContrastiveLossWMT(
         wmtcl_train_dset.n_neighbors,
-        score_type_weights={SCORE_TYPE2ID['da']: 0.8, SCORE_TYPE2ID['mqm']: 1.0, SCORE_TYPE2ID['sqm']: 0.6}
+        score_type_weights=SCORE_TYPE_WEIGHTS
     )
 
     train_dataloader, test_dataloader, model, optimizer, scheduler = accelerator.prepare(
@@ -123,7 +105,7 @@ if __name__ == '__main__':
 
     accelerator.wait_for_everyone()
 
-    for epoch in range(n_epochs):
+    for epoch in range(N_EPOCHS):
         accelerator.print(f'TRAIN EPOCH {epoch + 1}')
         model.train()
         for batch in (pbar := tqdm(train_dataloader, disable=(not accelerator.is_local_main_process))):
