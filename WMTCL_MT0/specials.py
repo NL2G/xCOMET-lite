@@ -2,7 +2,7 @@ SEED = 101
 DATA_DIR = '/home/vyskov/Effective_Metrics/data'
 
 ST_MODEL = 'sentence-transformers/sentence-t5-large'
-MT0_MODEL = 'bigscience/mt0-large'
+MT0_MODEL = 'bigscience/mt0-xxl-mt'
 
 TARGET_LANG_PAIRS = ['en-de', 'zh-en', 'he-en']
 LANG_PAIRS = TARGET_LANG_PAIRS + ['de-en', 'en-zh']
@@ -31,4 +31,4 @@ TEST_BATCH_SIZE = 32
 N_EPOCHS = 5
 
 MAX_LENGTH = 128
-GRADIENT_ACCUMULATION_STEPS = 4
+GRADIENT_ACCUMULATION_STEPS = 2
