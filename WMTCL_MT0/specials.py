@@ -1,5 +1,5 @@
 SEED = 101
-DATA_DIR = '/home/vyskov/Effective_Metrics/data'
+DATA_DIR = '/homes/dlarionov/efficient-llm-metrics/WMTCL_MT0/data'
 
 ST_MODEL = 'sentence-transformers/sentence-t5-large'
 MT0_MODEL = 'bigscience/mt0-xxl-mt'
@@ -26,9 +26,9 @@ SCORE_TYPE_WEIGHTS = {
     SCORE_TYPE2ID['sqm']: 0.6
 }
 
-TRAIN_BATCH_SIZE = 16
-TEST_BATCH_SIZE = 32
+TRAIN_BATCH_SIZE = 4
+TEST_BATCH_SIZE = 4
 N_EPOCHS = 5
 
 MAX_LENGTH = 128
-GRADIENT_ACCUMULATION_STEPS = 2
+GRADIENT_ACCUMULATION_STEPS = 16

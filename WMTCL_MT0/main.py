@@ -68,7 +68,9 @@ if __name__ == '__main__':
 
     tokenizer = AutoTokenizer.from_pretrained(MT0_MODEL)
 
-    lp2train_dset, lp2ref_index, lp2mt_index = get_lp_training_staff(train_dset, ST_MODEL)
+    with accelerator.main_process_first():
+        lp2train_dset, lp2ref_index, lp2mt_index = get_lp_training_staff(train_dset, ST_MODEL)
+
     lp2train_dset = DatasetDict(lp2train_dset).map(partial(tokenize_, tokenizer=tokenizer))
     test_dset = test_dset.map(partial(tokenize_, tokenizer=tokenizer))
 
@@ -87,7 +89,9 @@ if __name__ == '__main__':
     train_dataloader = DataLoader(wmtcl_train_dset, batch_size=1, shuffle=True, pin_memory=True, collate_fn=train_collator)
     test_dataloader = DataLoader(wmtcl_test_dset, batch_size=TEST_BATCH_SIZE, shuffle=False, pin_memory=True, collate_fn=test_collator)
 
-    model = MT5EncoderModel.from_pretrained(MT0_MODEL)
+    with accelerator.main_process_first():
+        model = MT5EncoderModel.from_pretrained(MT0_MODEL)
+        
     model.gradient_checkpointing_enable()
 
     optimizer = torch.optim.AdamW(
@@ -98,6 +102,8 @@ if __name__ == '__main__':
         wmtcl_train_dset.n_neighbors,
         score_type_weights=SCORE_TYPE_WEIGHTS
     )
+
+    accelerator.wait_for_everyone()
 
     train_dataloader, test_dataloader, model, optimizer, scheduler = accelerator.prepare(
         train_dataloader, test_dataloader, model, optimizer, scheduler

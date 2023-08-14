@@ -6,6 +6,7 @@ from tqdm import tqdm
 
 import torch
 from torch import nn
+import datasets
 from sentence_transformers import SentenceTransformer
 
 from datasets import Dataset

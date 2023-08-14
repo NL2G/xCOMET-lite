@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #SBATCH --job-name=wmtcl_mt0
-#SBATCH --gres=gpu:7
+#SBATCH --gres=gpu:4
 #SBATCH --time=24:00:00
 #SBATCH --mem=64GB
 #SBATCH --output=./outputs-%j.txt
