@@ -114,7 +114,7 @@ if __name__ == '__main__':
     scheduler = get_scheduler('linear', optimizer, num_warmup_steps=1000, num_training_steps=(N_EPOCHS * len(wmtcl_train_dset)))
     loss = ContrastiveLossWMT(
         wmtcl_train_dset.n_neighbors,
-        score_type_weights={SCORE_TYPE2ID['da']: 1, SCORE_TYPE2ID['mqm']: 2, SCORE_TYPE2ID['sqm']: 1}
+        score_type_weights={SCORE_TYPE2ID['da']: 0.8, SCORE_TYPE2ID['mqm']: 1.0, SCORE_TYPE2ID['sqm']: 0.6}
     )
 
     train_dataloader, test_dataloader, model, optimizer, scheduler = accelerator.prepare(
