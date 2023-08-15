@@ -19,22 +19,23 @@ echo "============="
 
 accelerate launch prompt-regressor/run.py \
     --n-bits 16 \
+    --use-lora \
     --epochs 3 \
     --batch-size 16 \
     --gradient-accumulation-steps 2 \
     --scale-lr \
-    --use-lora \
-    --lr=5e-4 \
-    --activation="gelu_fast" \
+    --subsample-train=100000 \
+    --lr=1e-4 \
+    --activation="sigmoid" \
     --use-tf32 \
     --weight-decay=0.01 \
     --log-every=100 \
-    --eval-every=2000 \
-    --checkpoint-every=2000 \
+    --checkpoint-every=500 \
+    --eval-every=500 \
     --warmup-ratio=0.1 \
     --max-length=512 \
     --optim="paged_adam_8bit" \
     --group-name="bloomz-1b1-4bit" \
-    --save-path="./experiments/prompt-regressor/model" \
+    --save-path="./experiments/prompt-regressor/model-1b1" \
     --checkpoint-path="./experiments/prompt-regressor/checkpoint"
 

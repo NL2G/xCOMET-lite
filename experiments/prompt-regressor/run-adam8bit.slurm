@@ -19,8 +19,8 @@ echo "============="
 
 accelerate launch prompt-regressor/run.py \
     --n-bits 16 \
-    --epochs 3 \
     --use-lora \
+    --epochs 3 \
     --batch-size 16 \
     --gradient-accumulation-steps 2 \
     --scale-lr \
