@@ -31,7 +31,7 @@ def save_model(model, accelerator, filepath, final=False):
         i = 0
         parts = filepath.rsplit('.', 1)
         for _ in range(N_COPIES):
-            path_ = add_index(parts, i)
+            path_ = add_index_to_path(parts, i)
             if not os.path.exists(path_):
                 break
             i += 1

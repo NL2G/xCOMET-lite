@@ -179,6 +179,7 @@ if __name__ == '__main__':
                         log_ = {'src & ref correlation': total_correlation / total_}
                         accelerator.print(f'src & ref correlation: {total_correlation / total_}')
                         accelerator.log(log_)
+                    model.train()
 
         accelerator.wait_for_everyone()
 
