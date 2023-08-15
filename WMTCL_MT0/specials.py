@@ -1,8 +1,9 @@
 SEED = 101
 DATA_DIR = '/homes/dlarionov/efficient-llm-metrics/WMTCL_MT0/data'
+MODEL_DIR = f'{DATA_DIR}/ckpts'
 
 ST_MODEL = 'sentence-transformers/sentence-t5-large'
-MT0_MODEL = 'bigscience/mt0-xxl-mt'
+MT0_MODEL = 'bigscience/mt0-large'
 
 TARGET_LANG_PAIRS = ['en-de', 'zh-en', 'he-en']
 LANG_PAIRS = TARGET_LANG_PAIRS + ['de-en', 'en-zh']
@@ -23,12 +24,18 @@ SCORE_TYPE2ID = {
 SCORE_TYPE_WEIGHTS = {
     SCORE_TYPE2ID['da']: 0.8,
     SCORE_TYPE2ID['mqm']: 1.0,
-    SCORE_TYPE2ID['sqm']: 0.6
+    SCORE_TYPE2ID['sqm']: 0.8
 }
 
-TRAIN_BATCH_SIZE = 4
-TEST_BATCH_SIZE = 4
+TRAIN_BATCH_SIZE = 16
+TEST_BATCH_SIZE = 32
 N_EPOCHS = 1
 
 MAX_LENGTH = 128
 GRADIENT_ACCUMULATION_STEPS = 16
+WEIGHT_DECAY = 1e-6
+NUM_WARMUP_STEPS = 1000
+
+N_COPIES = 3
+CHECKPOINT_EVERY_STEP = 10000
+EVAL_EVERY_STEP = 10000
