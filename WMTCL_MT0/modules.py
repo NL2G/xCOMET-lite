@@ -19,6 +19,32 @@ def free_():
     torch.cuda.empty_cache()
 
 
+def add_index_to_path(parts, i):
+    return f'{parts[0]}_{i}.ckpt' if len(parts) == 1 else f'{parts[0]}_{i}.{parts[1]}'
+
+
+def save_model(model, accelerator, filepath, final=False):
+    if accelerator.is_local_main_process:
+        if final:
+            accelerator.save(model.state_dict(), filepath)
+            return
+        i = 0
+        parts = filepath.rsplit('.', 1)
+        for _ in range(N_COPIES):
+            path_ = add_index_to_path(parts, i)
+            if not os.path.exists(path_):
+                break
+            i += 1
+        if i < N_COPIES:
+            accelerator.save(model.state_dict(), add_index_to_path(parts, i))
+            return
+        os.remove(add_index_to_path(parts, 0))
+        for j in range(1, N_COPIES):
+            os.rename(add_index_to_path(parts, j), add_index_to_path(parts, j-1))
+
+        accelerator.save(model.state_dict(), add_index_to_path(parts, N_COPIES-1))
+
+
 def prepare_faiss(
     model,
     pool,
@@ -223,7 +249,7 @@ class DataCollatorWithPaddingAndScore:
         batch['score'] = scores
         batch['score_type'] = score_types
         return batch
-
+ 
 
 class ContrastiveLossWMT(nn.Module):
     """
