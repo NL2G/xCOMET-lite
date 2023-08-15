@@ -9,6 +9,7 @@ from transformers.trainer_pt_utils import get_parameter_names
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 import peft
 import datasets as ds
+from transformers.activations import ACT2FN
 import logging
 import os
 from tqdm.auto import tqdm
@@ -54,7 +55,8 @@ def get_optimizer(
         lr: float,
         betas: tuple[float, float],
         weight_decay: float, 
-        eps: float
+        eps: float,
+        use_lora: bool = False,
     ) -> torch.optim.Optimizer:
 
     logger.info(f"Using optimizer: {optim} with lr={lr}, betas={betas}, weight_decay={weight_decay}, eps={eps}")
@@ -112,11 +114,73 @@ def get_optimizer(
 
         optimizer = optim_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
+        if not use_lora:
+            from bitsandbytes.optim import GlobalOptimManager
+            GlobalOptimManager.get_instance().register_module_override(
+                model.transformer.word_embeddings, 'weight', {'optim_bits': 32}
+            )
+
     else:
         raise ValueError(f"Invalid optimizer: {optim}")
     
     logger.info(f"Initialized optimizer: {optimizer}")
     return optimizer
+
+
+def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id2lp: dict[int, str], activation: callable):
+    total_lps = []
+    total_eval_labels = []
+    total_eval_preds = []
+    total_loss = []
+    model.eval()
+    with torch.no_grad():
+        for i, batch in enumerate(tqdm(eval_dataloader, desc="Evaluating", disable=not accelerate.is_main_process)):
+            lps = batch.pop("lp")
+            labels = batch.pop("labels")
+            outputs = model(**batch)
+            
+            loss = torch.nn.functional.mse_loss(
+                activation(outputs.logits.squeeze()),
+                labels.squeeze(),
+            )
+
+            preds = activation(outputs.logits.squeeze())
+            preds, labels, loss, lps = accelerate.gather_for_metrics(
+                (preds, labels, loss, lps)
+            )
+            total_loss.append(loss.mean().item())
+            total_eval_labels += labels.cpu().tolist()
+            total_eval_preds += preds.cpu().tolist()
+            total_lps += lps.cpu().tolist()
+    
+    total_eval_labels = np.array(total_eval_labels)
+    total_eval_preds = np.array(total_eval_preds)
+    language_pairs = np.array([id2lp[x] for x in total_lps])
+    logger.info(f"LPS: {set(language_pairs)}")
+    total_kt = kendalltau(total_eval_labels, total_eval_preds).statistic
+    lp_kt_results = {}
+    for lp in set(language_pairs):
+        lp_mask = language_pairs == lp
+        lp_kt_results[lp] = kendalltau(total_eval_labels[lp_mask], total_eval_preds[lp_mask]).statistic
+
+    eval_mse = np.mean(total_loss)
+    eval_rmse = np.sqrt(eval_mse)
+
+    logger_msg = f"Epoch {epoch:^8} | Eval MSE {eval_mse:^15} | Eval RMSE {eval_rmse:^15} | Eval KT {total_kt:^15} | "
+    for lp, kt in lp_kt_results.items():
+        logger_msg += f"{lp}: {kt:^10} | "
+
+    logger.info(logger_msg.strip())
+
+    logger_values = {
+        "eval/mse": eval_mse,
+        "eval/rmse": eval_rmse,
+        "eval/kt": total_kt,
+    }
+    for lp, kt in lp_kt_results.items():
+        logger_values[f"eval/kt_{lp}"] = kt
+
+    accelerate.log(logger_values)
 
 
 
@@ -169,12 +233,11 @@ def init_model(model_name: str, n_bits: int, use_lora: bool):
 
     if use_lora:
         lora_config = peft.LoraConfig(
-            task_type=peft.TaskType.SEQ_CLS,
+            task_type=peft.TaskType.SEQ_CLS, lora_dropout=0.05, bias='lora_only', r=64, lora_alpha=32
         )
         logger.info(f"Using LoRA with config: {lora_config}")
         model = peft.get_peft_model(model, lora_config)
-        #trainable_params_num, total_params_num = model.get_nb_trainable_parameters()
-        #logger.info(f"Trainable params: {trainable_params_num} | total params: {total_params_num} | trainable pct%: {trainable_params_num / total_params_num * 100:.2f}")
+        model.print_trainable_parameters()
         
     logger.info("Model loaded")
     logger.info(f"Model summary: {model}")
@@ -193,8 +256,15 @@ def main():
 
     parser.add_argument(
         "--use-lora",
-        default=True,
+        default=False,
         action="store_true",
+    )
+
+    parser.add_argument(
+        "--activation",
+        type=str,
+        default="linear",
+        choices=list(ACT2FN.keys()),
     )
 
     parser.add_argument(
@@ -298,6 +368,12 @@ def main():
     )
 
     parser.add_argument(
+        "--eval-every",
+        type=int,
+        default=500,
+    )
+
+    parser.add_argument(
         "--load-from-checkpoint",
         type=str,
         default=None,
@@ -321,12 +397,19 @@ def main():
 
     # initializing accelerate
 
+    if args.use_lora:
+        kwargs = {
+            'kwargs_handlers': [
+                acc.DistributedDataParallelKwargs(find_unused_parameters=True)
+            ]
+        }
+    else:
+        kwargs = {}
+
     accelerate = acc.Accelerator(
         log_with='wandb',
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        kwargs_handlers=[
-            acc.DistributedDataParallelKwargs(find_unused_parameters=True)
-        ]
+        **kwargs
     )
     accelerate.init_trackers(
         project_name="wmt23-prompt-regressor",
@@ -384,7 +467,8 @@ def main():
         if args.subsample_val > 0:
             dataset['test'] = dataset['test'].shuffle(seed=args.seed).select(range(args.subsample_val))
 
-        dataset = dataset.sort(column_names=["len"], reverse=True)
+        #dataset = dataset.sort(column_names=["len"])#, reverse=True)
+        dataset = dataset.shuffle(seed=args.seed)
         dataset = dataset.remove_columns(["len"])
 
     accelerate.wait_for_everyone()
@@ -401,7 +485,8 @@ def main():
         model=model, optim=args.optim,
         lr=args.lr, eps=args.eps, 
         weight_decay=args.weight_decay, 
-        betas=(args.beta1, args.beta2)
+        betas=(args.beta1, args.beta2),
+        use_lora=args.use_lora,
     )
 
     # Initialize scheduler
@@ -457,6 +542,8 @@ def main():
     checkpoint_steps = int(args.checkpoint_every)
     logger.info(f"Checkpointing every {checkpoint_steps} steps")
 
+    activation = ACT2FN[args.activation]
+
     logger.info("Starting training")
     accelerate.wait_for_everyone()
     for epoch in range(args.epochs):
@@ -472,73 +559,60 @@ def main():
             with accelerate.accumulate(model):
                 labels = batch.pop("labels")
                 outputs = model(**batch)
-                loss = torch.sqrt(torch.nn.functional.mse_loss(outputs.logits.squeeze(), labels.squeeze()))
+
+                loss = torch.nn.functional.mse_loss(
+                    activation(outputs.logits.squeeze()),
+                    labels.squeeze(),
+                )
 
                 accelerate.backward(loss)
+                if accelerate.sync_gradients:
+                    accelerate.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
                 scheduler.step()
                 optimizer.zero_grad()
 
                 if (i + 1) % logging_steps == 0:
-                    logger.info(f"Epoch {epoch + 1:^4} | Step {i:^5} out of {len(train_dataloader):^5} | Loss {loss.item():^10.6f} | LR {optimizer.param_groups[-1]['lr']}")
+                    mse = loss.item()
+                    rmse = np.sqrt(mse)
+                    logger.info(f"Epoch {epoch + 1:^4} | Step {i:^5} out of {len(train_dataloader):^5} | MSE {mse:^10.6f} | RMSE {rmse:^10.6f}")
                     accelerate.log({
-                        "train/loss": loss.item(),
-                        "misc/lr": scheduler.get_last_lr()[0],
+                        "train/mse": mse,
+                        "train/rmse": rmse,
+                        "train/lr": scheduler.get_last_lr()[0],
                     })
 
                 if (i + 1) % checkpoint_steps == 0:
                     logger.info(f"Checkpointing model at step {i}")
                     accelerate.save_state(output_dir=args.checkpoint_path)
 
-        logger.info(f"Evaluating model at epoch {epoch + 1}")
+                if (i + 1) % args.eval_every == 0:
+                    logger.info(f"Evaluating model at step {i}")
+                    accelerate.wait_for_everyone()
+                    evaluate(
+                        model=model,
+                        eval_dataloader=eval_dataloader, 
+                        accelerate=accelerate, 
+                        id2lp=id2lp, 
+                        epoch=epoch + 1,
+                        activation=activation,
+                    )
+                    model.train()
+                    accelerate.wait_for_everyone()
+
         accelerate.wait_for_everyone()
 
-        total_lps = []
-        total_eval_labels = []
-        total_eval_preds = []
-        total_loss = []
-        model.eval()
-        with torch.no_grad():
-            for i, batch in enumerate(tqdm(eval_dataloader, desc="Evaluating", disable=not accelerate.is_main_process)):
-                labels = batch.pop("labels")
-                lps = batch.pop("lp")
-                outputs = model(**batch)
-                loss = torch.sqrt(torch.nn.functional.mse_loss(outputs.logits.squeeze(), labels.squeeze()))
-                preds = torch.sigmoid(outputs.logits)
-                #logger.info(f"batch: {i}")
-                preds, labels, loss, lps = accelerate.gather_for_metrics(
-                    (preds, labels, loss, lps)
-                )
-                total_loss.append(loss.mean().item())
-                total_eval_labels += labels.cpu().tolist()
-                total_eval_preds += preds.cpu().tolist()
-                total_lps += lps.cpu().tolist()
-        
-        total_eval_labels = np.array(total_eval_labels)
-        total_eval_preds = np.array(total_eval_preds)
-        language_pairs = np.array([id2lp[x] for x in total_lps])
-        logger.info(f"LPS: {set(language_pairs)}")
-        total_kt = kendalltau(total_eval_labels, total_eval_preds).statistic
-        lp_kt_results = {}
-        for lp in set(language_pairs):
-            lp_mask = language_pairs == lp
-            lp_kt_results[lp] = kendalltau(total_eval_labels[lp_mask], total_eval_preds[lp_mask]).statistic
 
-        logger_msg = f"Epoch {epoch + 1:^4} | Eval loss {np.mean(total_loss):^15} | Eval KT {total_kt:^15} | "
-        for lp, kt in lp_kt_results.items():
-            logger_msg += f"{lp}: {kt:^10} | "
-
-        logger.info(logger_msg.strip())
-
-        logger_values = {
-            "eval/loss": np.mean(total_loss),
-            "eval/kt": total_kt,
-        }
-        for lp, kt in lp_kt_results.items():
-            logger_values[f"eval/kt_{lp}"] = kt
-
-        accelerate.log(logger_values)
-        accelerate.wait_for_everyone()
+    logger.info("Final evaluation")
+    evaluate(
+        model=model, 
+        eval_dataloader=eval_dataloader, 
+        accelerate=accelerate, 
+        id2lp=id2lp, 
+        epoch="Last",
+        activation=activation,
+    )
+    accelerate.wait_for_everyone()
 
     accelerate.end_training()
     logger.info("Finished training, saving model")
