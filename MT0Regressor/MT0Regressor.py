@@ -42,8 +42,6 @@ class MT0Regressor(nn.Module):
             if i < len(config.sizes_mlp) - 2:
                 layers.append(config.hidden_act())
 
-        # layers.append(nn.Dropout(dropout_coef))
-
         self.mlp = nn.Sequential(*layers)
         self.output_act = config.output_act()
 
@@ -51,7 +49,6 @@ class MT0Regressor(nn.Module):
 
     def forward(self, input_ids=None, attention_mask=None, labels=None):
         outputs = self.llm(input_ids=input_ids, attention_mask=attention_mask)
-        # print(outputs)
         embeddings = mean_pooling(
             outputs.last_hidden_state, attention_mask=attention_mask
         )
