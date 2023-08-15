@@ -181,7 +181,7 @@ def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id
         logger_values[f"eval/kt_{lp}"] = kt
 
     accelerate.log(logger_values)
-
+    model.train()
 
 
 
@@ -233,7 +233,11 @@ def init_model(model_name: str, n_bits: int, use_lora: bool):
 
     if use_lora:
         lora_config = peft.LoraConfig(
-            task_type=peft.TaskType.SEQ_CLS, lora_dropout=0.05, bias='lora_only', r=64, lora_alpha=32
+            task_type=peft.TaskType.SEQ_CLS, 
+            lora_dropout=0.05, 
+            bias='lora_only', 
+            r=64, lora_alpha=32, 
+            inference_mode=False
         )
         logger.info(f"Using LoRA with config: {lora_config}")
         model = peft.get_peft_model(model, lora_config)
@@ -619,9 +623,9 @@ def main():
     accelerate.save_state(output_dir=args.checkpoint_path)
     if accelerate.is_main_process:
         model = accelerate.unwrap_model(model)
-        model.save_pretrained(args.save_path, safe_serialization=True)
         if args.use_lora:
-            model.create_or_update_model_card(args.save_path)
+            model = model.merge_and_unload()
+        model.save_pretrained(args.save_path, safe_serialization=True)
         tokenizer.save_pretrained(args.save_path)
 
 

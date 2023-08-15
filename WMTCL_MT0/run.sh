@@ -9,6 +9,7 @@
 #SBATCH --cpus-per-task=16
 #SBATCH --ntasks-per-node=1
 #SBATCH --ntasks=1
+#SBATCH --exclude=worker-8
 
 echo "Starting at `date` on `hostname` at `pwd`"
 echo "Job name: $SLURM_JOB_NAME Job ID: $SLURM_JOB_ID"
