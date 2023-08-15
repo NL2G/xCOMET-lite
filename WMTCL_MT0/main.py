@@ -7,6 +7,7 @@ from tqdm import tqdm
 from pathlib import Path
 
 import logging
+from bitsandbytes.optim import PagedLion8bit, GlobalOptimManager
 from rich.logging import RichHandler
 
 import torch
@@ -90,13 +91,23 @@ if __name__ == '__main__':
     test_dataloader = DataLoader(wmtcl_test_dset, batch_size=TEST_BATCH_SIZE, shuffle=False, pin_memory=True, collate_fn=test_collator)
 
     with accelerator.main_process_first():
-        model = MT5EncoderModel.from_pretrained(MT0_MODEL)
+        model = MT5EncoderModel.from_pretrained(MT0_MODEL, torch_dtype=torch.bfloat16)
         
     model.gradient_checkpointing_enable()
 
-    optimizer = torch.optim.AdamW(
-        model.parameters()
+    #optimizer = torch.optim.AdamW(
+    #    model.parameters()
+    #)
+
+    GlobalOptimManager.get_instance().register_module_override(
+        model.get_input_embeddings(), 'weight', {"optim_bits": 32}
     )
+
+    optimizer = PagedLion8bit(
+        params=model.parameters(),
+    )
+
+
     scheduler = get_scheduler('linear', optimizer, num_warmup_steps=1000, num_training_steps=(N_EPOCHS * len(train_dataloader)))
     loss = ContrastiveLossWMT(
         wmtcl_train_dset.n_neighbors,

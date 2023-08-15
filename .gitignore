@@ -160,6 +160,14 @@ cython_debug/
 #.idea/
 
 *logs*
-
+*wmt23metrics*
 BLEURT*
 *wandb*
+*.bin
+*.pkl
+*.json
+*.txt
+*.idx
+*.pt*
+*.safetensors
+ya.py
