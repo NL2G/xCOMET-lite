@@ -37,6 +37,7 @@ from modules import *
 
 os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
 Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
+Path(MODEL_DIR).mkdir(parents=True, exist_ok=True)
 
 
 def mean_pooling(token_embeddings, attention_mask):
@@ -105,10 +106,11 @@ if __name__ == '__main__':
 
     optimizer = PagedLion8bit(
         params=model.parameters(),
+        weight_decay=WEIGHT_DECAY
     )
 
 
-    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=1000, num_training_steps=(N_EPOCHS * len(train_dataloader)))
+    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=NUM_WARMUP_STEPS, num_training_steps=(N_EPOCHS * len(train_dataloader)))
     loss = ContrastiveLossWMT(
         wmtcl_train_dset.n_neighbors,
         score_type_weights=SCORE_TYPE_WEIGHTS
@@ -122,9 +124,10 @@ if __name__ == '__main__':
 
     accelerator.wait_for_everyone()
 
+    n_steps_ = 0
+    model.train()
     for epoch in range(N_EPOCHS):
         accelerator.print(f'TRAIN EPOCH {epoch + 1}')
-        model.train()
         for batch in (pbar := tqdm(train_dataloader, disable=(not accelerator.is_local_main_process))):
             with accelerator.accumulate(model):
                 score = batch.pop('score')[0]
@@ -136,7 +139,7 @@ if __name__ == '__main__':
                 loss_ = loss(outputs, score, score_type)
                 free_()
 
-                loss_.backward()
+                accelerator.backward(loss_)
                 free_()
 
                 optimizer.step()
@@ -149,31 +152,34 @@ if __name__ == '__main__':
                 pbar.set_postfix(log_)
                 accelerator.log(log_)
 
-        accelerator.print(f'EVAL EPOCH {epoch + 1}')
-        model.eval()
-        total_correlation = 0.0
-        total_ = 0.0
-        if accelerator.is_local_main_process:
-            for batch in (pbar := tqdm(test_dataloader, disable=(not accelerator.is_local_main_process))):
-                with torch.no_grad():
-                    outputs = model(**batch)
-                    outputs = mean_pooling(outputs.last_hidden_state, batch['attention_mask'])
-                    outputs = torch.nn.functional.normalize(outputs, dim=1)
-                    embs_src = outputs[0::2]
-                    embs_ref = outputs[1::2]
-
-                    correlation_ = (embs_src @ embs_ref.T).diag().sum().item()
-                    total_correlation += correlation_
-                    total_ += (len(batch) / 2)
-
-                    log_ = {'src & ref correlation': total_correlation / total_}
-                    pbar.set_postfix(log_)
-
-            log_ = {'src & ref correlation': total_correlation / total_}
-            accelerator.print(f'src & ref correlation: {total_correlation / total_}')
-            accelerator.log(log_)
+                n_steps_ += 1
+                if n_steps_ % CHECKPOINT_EVERY_STEP == 0:
+                    save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', final=False)
+                if n_steps % EVAL_EVERY_STEP == 0:
+                    accelerator.print(f'EVAL STEP {n_steps_}')
+                    model.eval()
+                    total_correlation = 0.0
+                    total_ = 0.0
+                    if accelerator.is_local_main_process:
+                        for batch in (pbar := tqdm(test_dataloader, disable=(not accelerator.is_local_main_process))):
+                            with torch.no_grad():
+                                outputs = model(**batch)
+                                outputs = mean_pooling(outputs.last_hidden_state, batch['attention_mask'])
+                                outputs = torch.nn.functional.normalize(outputs, dim=1)
+                                embs_src = outputs[0::2]
+                                embs_ref = outputs[1::2]
+            
+                                correlation_ = (embs_src @ embs_ref.T).diag().sum().item()
+                                total_correlation += correlation_
+                                total_ += (len(batch) / 2)
+            
+                                log_ = {'src & ref correlation': total_correlation / total_}
+                                pbar.set_postfix(log_)
+            
+                        log_ = {'src & ref correlation': total_correlation / total_}
+                        accelerator.print(f'src & ref correlation: {total_correlation / total_}')
+                        accelerator.log(log_)
 
         accelerator.wait_for_everyone()
 
-    if accelerator.is_local_main_process:
-        accelerator.save(model.state_dict(), f'{DATA_DIR}/wmtcl_mt0_encoder.pth')
+    save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.pth', final=True)
