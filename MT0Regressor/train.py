@@ -16,7 +16,7 @@ from accelerate import Accelerator
 
 def main(model, dataloader_train, dataloader_eval, optimizer,
          scheduler, metric, num_epochs, num_training_steps):
-    accelerator = Accelerator(log_with='wandb', gradient_accumulation_steps=4)
+    accelerator = Accelerator(log_with='wandb')
     accelerator.init_trackers(
         project_name="t5regressor", 
         init_kwargs={'entity': 'airi23-efficient-llm-metrics'}
@@ -36,22 +36,21 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
         accelerator.print(f"TRAIN EPOCH {epoch + 1}")
         model.train()
         for batch in dataloader_train:
-            with accelerator.accumulate(model):
-                outputs = model(**batch)
-    
-                loss = outputs[2]
-    
-                accelerator.backward(loss)
-                optimizer.step()
-                scheduler.step()
-                optimizer.zero_grad()
-    
-                progress_bar_train.set_postfix(
-                    {"loss": loss.item(), "logits": outputs[1][1].item()}
-                )
-                progress_bar_train.update(1)
-    
-                accelerator.log({"loss": loss.item()})
+            outputs = model(**batch)
+
+            loss = outputs[2]
+
+            accelerator.backward(loss)
+            optimizer.step()
+            scheduler.step()
+            optimizer.zero_grad()
+
+            progress_bar_train.set_postfix(
+                {"loss": loss.item(), "logits": outputs[1][1].item()}
+            )
+            progress_bar_train.update(1)
+
+            accelerator.log({"loss": loss.item()})
 
         accelerator.print("EVAL")
         model.eval()
@@ -89,11 +88,12 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
 
 
 if __name__ == "__main__":
-    model_encoder_name = "bigscience/mt0-xxl"
+    model_encoder_name = "bigscience/mt0-large"
 
     config = Args(
         encoder_name=model_encoder_name,
-        sizes_mlp=[4096, 1024, 256, 1],
+        size_labsell=512,
+        sizes_mlp=[384, 96, 1], # starting from 2th linear layer; 1th layer size 1024 + 512 = 1536
         hidden_act=nn.Tanh,
         dropout_coef=0.1,
         need_lora=False,
@@ -105,8 +105,8 @@ if __name__ == "__main__":
 
     print("Model successfully loaded.")
 
-    dataloader_train = torch.load('dataloader_train_xxl.pth')
-    dataloader_eval = torch.load('dataloader_eval_xxl.pth')
+    dataloader_train = torch.load('dataloader_train_large_labse.pth')
+    dataloader_eval = torch.load('dataloader_eval_large_labse.pth')
 
     print("DataLoaders successfully loaded.")
 
