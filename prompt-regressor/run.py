@@ -33,14 +33,17 @@ Reference: [{ref}]
 
 Hypothesis: [{mt}]"""
 
-def get_tokenize_fn(template: str, tokenizer: tr.PreTrainedTokenizerFast, max_length: int) -> callable:
+
+def get_tokenize_fn(
+    template: str, tokenizer: tr.PreTrainedTokenizerFast, max_length: int
+) -> callable:
     def tokenize_fn(example: dict[str, str]) -> dict[str, np.ndarray]:
         score = example.pop("score")
         inputs = template.format(**example)
         tokenized = tokenizer(
             inputs,
             max_length=max_length,
-            truncation='longest_first',
+            truncation="longest_first",
         )
         tokenized["labels"] = score
         tokenized["len"] = len(tokenized["input_ids"])
@@ -50,35 +53,40 @@ def get_tokenize_fn(template: str, tokenizer: tr.PreTrainedTokenizerFast, max_le
 
 
 def get_optimizer(
-        model: tr.PreTrainedModel,
-        optim: str, 
-        lr: float,
-        betas: tuple[float, float],
-        weight_decay: float, 
-        eps: float,
-        use_lora: bool = False,
-    ) -> torch.optim.Optimizer:
-
-    logger.info(f"Using optimizer: {optim} with lr={lr}, betas={betas}, weight_decay={weight_decay}, eps={eps}")
+    model: tr.PreTrainedModel,
+    optim: str,
+    lr: float,
+    betas: tuple[float, float],
+    weight_decay: float,
+    eps: float,
+    use_lora: bool = False,
+) -> torch.optim.Optimizer:
+    logger.info(
+        f"Using optimizer: {optim} with lr={lr}, betas={betas}, weight_decay={weight_decay}, eps={eps}"
+    )
 
     decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
     decay_parameters = [name for name in decay_parameters if "bias" not in name]
     optimizer_grouped_parameters = [
         {
             "params": [
-                p for n, p in model.named_parameters() if (n in decay_parameters and p.requires_grad)
+                p
+                for n, p in model.named_parameters()
+                if (n in decay_parameters and p.requires_grad)
             ],
             "weight_decay": weight_decay,
         },
         {
             "params": [
-                p for n, p in model.named_parameters() if (n not in decay_parameters and p.requires_grad)
+                p
+                for n, p in model.named_parameters()
+                if (n not in decay_parameters and p.requires_grad)
             ],
             "weight_decay": 0.0,
         },
     ]
 
-    if optim in ['adamw', 'adamw_fused']:
+    if optim in ["adamw", "adamw_fused"]:
         from torch.optim import AdamW
 
         optimizer_kwargs = {
@@ -87,16 +95,16 @@ def get_optimizer(
             "betas": betas,
         }
 
-        if optim == 'adamw_fused':
+        if optim == "adamw_fused":
             optimizer_kwargs["fused"] = True
 
         optimizer = AdamW(optimizer_grouped_parameters, **optimizer_kwargs)
 
-    elif '8bit' in optim or 'lion' in optim:
+    elif "8bit" in optim or "lion" in optim:
         from bitsandbytes.optim import AdamW, Lion
 
-        is_paged = 'paged' in optim
-        is_lion = 'lion' in optim
+        is_paged = "paged" in optim
+        is_lion = "lion" in optim
 
         if is_lion:
             optim_cls = Lion
@@ -116,29 +124,43 @@ def get_optimizer(
 
         if not use_lora:
             from bitsandbytes.optim import GlobalOptimManager
+
             GlobalOptimManager.get_instance().register_module_override(
-                model.transformer.word_embeddings, 'weight', {'optim_bits': 32}
+                model.transformer.word_embeddings, "weight", {"optim_bits": 32}
             )
 
     else:
         raise ValueError(f"Invalid optimizer: {optim}")
-    
+
     logger.info(f"Initialized optimizer: {optimizer}")
     return optimizer
 
 
-def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id2lp: dict[int, str], activation: callable):
+def evaluate(
+    model,
+    eval_dataloader,
+    accelerate: acc.Accelerator,
+    epoch: int,
+    id2lp: dict[int, str],
+    activation: callable,
+):
     total_lps = []
     total_eval_labels = []
     total_eval_preds = []
     total_loss = []
     model.eval()
     with torch.no_grad():
-        for i, batch in enumerate(tqdm(eval_dataloader, desc="Evaluating", disable=not accelerate.is_main_process)):
+        for i, batch in enumerate(
+            tqdm(
+                eval_dataloader,
+                desc="Evaluating",
+                disable=not accelerate.is_main_process,
+            )
+        ):
             lps = batch.pop("lp")
             labels = batch.pop("labels")
             outputs = model(**batch)
-            
+
             loss = torch.nn.functional.mse_loss(
                 activation(outputs.logits.squeeze()),
                 labels.squeeze(),
@@ -152,7 +174,7 @@ def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id
             total_eval_labels += labels.cpu().tolist()
             total_eval_preds += preds.cpu().tolist()
             total_lps += lps.cpu().tolist()
-    
+
     total_eval_labels = np.array(total_eval_labels)
     total_eval_preds = np.array(total_eval_preds)
     language_pairs = np.array([id2lp[x] for x in total_lps])
@@ -161,7 +183,9 @@ def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id
     lp_kt_results = {}
     for lp in set(language_pairs):
         lp_mask = language_pairs == lp
-        lp_kt_results[lp] = kendalltau(total_eval_labels[lp_mask], total_eval_preds[lp_mask]).statistic
+        lp_kt_results[lp] = kendalltau(
+            total_eval_labels[lp_mask], total_eval_preds[lp_mask]
+        ).statistic
 
     eval_mse = np.mean(total_loss)
     eval_rmse = np.sqrt(eval_mse)
@@ -184,14 +208,14 @@ def evaluate(model, eval_dataloader, accelerate: acc.Accelerator, epoch: int, id
     model.train()
 
 
-
 def init_model(model_name: str, n_bits: int, use_lora: bool):
-    
-    logger.info(f"Loading model {model_name} with {n_bits}-bit quantization with LoRA={use_lora}")
+    logger.info(
+        f"Loading model {model_name} with {n_bits}-bit quantization with LoRA={use_lora}"
+    )
 
     if n_bits == 4 and not use_lora:
         raise ValueError("4-bit quantization is not supported without LoRA")
-    
+
     model_kwargs = {}
     if n_bits == 4:
         config = tr.BitsAndBytesConfig(
@@ -210,44 +234,46 @@ def init_model(model_name: str, n_bits: int, use_lora: bool):
         model_kwargs["torch_dtype"] = torch.float16
 
     elif n_bits == 16:
-        model_kwargs['torch_dtype'] = torch.bfloat16
+        model_kwargs["torch_dtype"] = torch.bfloat16
 
     elif n_bits == 32:
-        model_kwargs['torch_dtype'] = torch.float32
+        model_kwargs["torch_dtype"] = torch.float32
 
     else:
         raise ValueError(f"Invalid number of bits: {n_bits}")
-    
+
     model = tr.AutoModelForSequenceClassification.from_pretrained(
         model_name,
         **model_kwargs,
-        #device_map='auto',
-        num_labels=1
+        # device_map='auto',
+        num_labels=1,
     )
 
-    #logger.error(f"[]===========> Device Map: {model.hf_device_map} <=============]")
+    # logger.error(f"[]===========> Device Map: {model.hf_device_map} <=============]")
 
     if n_bits in {4, 8}:
-        #model.gradient_checkpointing_enable()
-        model = peft.prepare_model_for_kbit_training(model, use_gradient_checkpointing=False)
+        # model.gradient_checkpointing_enable()
+        model = peft.prepare_model_for_kbit_training(
+            model, use_gradient_checkpointing=False
+        )
 
     if use_lora:
         lora_config = peft.LoraConfig(
-            task_type=peft.TaskType.SEQ_CLS, 
-            lora_dropout=0.05, 
-            bias='lora_only', 
-            r=64, lora_alpha=32, 
-            inference_mode=False
+            task_type=peft.TaskType.SEQ_CLS,
+            lora_dropout=0.05,
+            bias="lora_only",
+            r=64,
+            lora_alpha=32,
+            inference_mode=False,
         )
         logger.info(f"Using LoRA with config: {lora_config}")
         model = peft.get_peft_model(model, lora_config)
         model.print_trainable_parameters()
-        
+
     logger.info("Model loaded")
     logger.info(f"Model summary: {model}")
 
     return model
-
 
 
 def main():
@@ -271,17 +297,9 @@ def main():
         choices=list(ACT2FN.keys()),
     )
 
-    parser.add_argument(
-        "--subsample-train",
-        type=int,
-        default=-1
-    )
+    parser.add_argument("--subsample-train", type=int, default=-1)
 
-    parser.add_argument(
-        "--subsample-val",
-        type=int,
-        default=-1
-    )
+    parser.add_argument("--subsample-val", type=int, default=-1)
 
     parser.add_argument("--n-bits", type=int, choices=[4, 8, 16, 32])
 
@@ -392,7 +410,7 @@ def main():
     parser.add_argument(
         "--group-name",
         type=str,
-        default='default-group',
+        default="default-group",
     )
 
     parser.add_argument("--save-path", type=str, default="./model/")
@@ -403,7 +421,7 @@ def main():
 
     if args.use_lora:
         kwargs = {
-            'kwargs_handlers': [
+            "kwargs_handlers": [
                 acc.DistributedDataParallelKwargs(find_unused_parameters=True)
             ]
         }
@@ -411,18 +429,18 @@ def main():
         kwargs = {}
 
     accelerate = acc.Accelerator(
-        log_with='wandb',
+        log_with="wandb",
         gradient_accumulation_steps=args.gradient_accumulation_steps,
-        **kwargs
+        **kwargs,
     )
     accelerate.init_trackers(
         project_name="wmt23-prompt-regressor",
         config=vars(args),
         init_kwargs={
-            'wandb': {
-                'group': args.group_name,
+            "wandb": {
+                "group": args.group_name,
             }
-        }
+        },
     )
 
     logger.info(f"Arguments: {args}")
@@ -437,14 +455,18 @@ def main():
 
     # scaling learning rate
     if args.scale_lr:
-        logger.info(f"Scaling learning rate according to number of processes: {args.lr} * {accelerate.num_processes} = {args.lr * accelerate.num_processes}")
+        logger.info(
+            f"Scaling learning rate according to number of processes: {args.lr} * {accelerate.num_processes} = {args.lr * accelerate.num_processes}"
+        )
         args.lr *= accelerate.num_processes
 
     # Load data
     logger.info("Loading data")
     with accelerate.main_process_first():
         dataset = ds.load_dataset(args.dataset)
-        dataset = dataset.map(lambda x: {'mt': x['mt'] if x['mt'] is not None else ''}, num_proc=10)
+        dataset = dataset.map(
+            lambda x: {"mt": x["mt"] if x["mt"] is not None else ""}, num_proc=10
+        )
         tokenizer = tr.AutoTokenizer.from_pretrained(args.model)
         tokenize_fn = get_tokenize_fn(
             TEMPLATE,
@@ -458,20 +480,30 @@ def main():
             remove_columns=["mt", "src", "ref", "score", "score_type"],
         )
 
-        dataset['train'] = dataset['train'].remove_columns(['lp'])
-        test_lps = set(dataset['test']['lp'])
+        dataset["train"] = dataset["train"].remove_columns(["lp"])
+        test_lps = set(dataset["test"]["lp"])
         lp2id = {lp: i for i, lp in enumerate(test_lps)}
         id2lp = {i: lp for i, lp in enumerate(test_lps)}
-        dataset['test'] = dataset['test'].map(lambda x: {'lp': lp2id[x['lp']]}, num_proc=10)
+        dataset["test"] = dataset["test"].map(
+            lambda x: {"lp": lp2id[x["lp"]]}, num_proc=10
+        )
 
         # Subsampling
         if args.subsample_train > 0:
-            dataset['train'] = dataset['train'].shuffle(seed=args.seed).select(range(args.subsample_train))
+            dataset["train"] = (
+                dataset["train"]
+                .shuffle(seed=args.seed)
+                .select(range(args.subsample_train))
+            )
 
         if args.subsample_val > 0:
-            dataset['test'] = dataset['test'].shuffle(seed=args.seed).select(range(args.subsample_val))
+            dataset["test"] = (
+                dataset["test"]
+                .shuffle(seed=args.seed)
+                .select(range(args.subsample_val))
+            )
 
-        #dataset = dataset.sort(column_names=["len"])#, reverse=True)
+        # dataset = dataset.sort(column_names=["len"])#, reverse=True)
         dataset = dataset.shuffle(seed=args.seed)
         dataset = dataset.remove_columns(["len"])
 
@@ -486,17 +518,24 @@ def main():
 
     # Initialize optimizer
     optimizer = get_optimizer(
-        model=model, optim=args.optim,
-        lr=args.lr, eps=args.eps, 
-        weight_decay=args.weight_decay, 
+        model=model,
+        optim=args.optim,
+        lr=args.lr,
+        eps=args.eps,
+        weight_decay=args.weight_decay,
         betas=(args.beta1, args.beta2),
         use_lora=args.use_lora,
     )
 
     # Initialize scheduler
-    num_training_steps = int(args.epochs * (len(dataset['train']) / (args.batch_size * args.gradient_accumulation_steps)))
+    num_training_steps = int(
+        args.epochs
+        * (len(dataset["train"]) / (args.batch_size * args.gradient_accumulation_steps))
+    )
     logger.info(f"Total num of training steps: {num_training_steps}")
-    logger.info(f"Effective batch size: {args.batch_size * args.gradient_accumulation_steps * accelerate.num_processes}")
+    logger.info(
+        f"Effective batch size: {args.batch_size * args.gradient_accumulation_steps * accelerate.num_processes}"
+    )
     num_warmup_steps = int(num_training_steps * args.warmup_ratio)
     scheduler = tr.get_cosine_schedule_with_warmup(
         optimizer,
@@ -506,24 +545,28 @@ def main():
 
     # Initialize collator
     collator = tr.DataCollatorWithPadding(
-        tokenizer=tokenizer, padding="longest", max_length=args.max_length, pad_to_multiple_of=8, return_tensors="pt"
+        tokenizer=tokenizer,
+        padding="longest",
+        max_length=args.max_length,
+        pad_to_multiple_of=8,
+        return_tensors="pt",
     )
 
     # Initialize data loader
 
     train_dataloader = DataLoader(
-        dataset['train'],
+        dataset["train"],
         batch_size=args.batch_size,
         num_workers=1,
         collate_fn=collator,
     )
 
     eval_dataloader = DataLoader(
-        dataset['test'],
+        dataset["test"],
         batch_size=args.batch_size,
         num_workers=1,
         shuffle=False,
-        sampler=torch.utils.data.SequentialSampler(dataset['test']),
+        sampler=torch.utils.data.SequentialSampler(dataset["test"]),
         collate_fn=collator,
     )
 
@@ -553,13 +596,15 @@ def main():
     for epoch in range(args.epochs):
         logger.info(f"Epoch {epoch + 1}")
         model.train()
-        for i, batch in enumerate(tqdm(
-            train_dataloader, 
-            mininterval=30, 
-            maxinterval=120,
-            desc=f"Epoch {epoch + 1}",
-            disable=not accelerate.is_main_process,
-        )):
+        for i, batch in enumerate(
+            tqdm(
+                train_dataloader,
+                mininterval=30,
+                maxinterval=120,
+                desc=f"Epoch {epoch + 1}",
+                disable=not accelerate.is_main_process,
+            )
+        ):
             with accelerate.accumulate(model):
                 labels = batch.pop("labels")
                 outputs = model(**batch)
@@ -579,12 +624,16 @@ def main():
                 if (i + 1) % logging_steps == 0:
                     mse = loss.item()
                     rmse = np.sqrt(mse)
-                    logger.info(f"Epoch {epoch + 1:^4} | Step {i:^5} out of {len(train_dataloader):^5} | MSE {mse:^10.6f} | RMSE {rmse:^10.6f}")
-                    accelerate.log({
-                        "train/mse": mse,
-                        "train/rmse": rmse,
-                        "train/lr": scheduler.get_last_lr()[0],
-                    })
+                    logger.info(
+                        f"Epoch {epoch + 1:^4} | Step {i:^5} out of {len(train_dataloader):^5} | MSE {mse:^10.6f} | RMSE {rmse:^10.6f}"
+                    )
+                    accelerate.log(
+                        {
+                            "train/mse": mse,
+                            "train/rmse": rmse,
+                            "train/lr": scheduler.get_last_lr()[0],
+                        }
+                    )
 
                 if (i + 1) % checkpoint_steps == 0:
                     logger.info(f"Checkpointing model at step {i}")
@@ -595,9 +644,9 @@ def main():
                     accelerate.wait_for_everyone()
                     evaluate(
                         model=model,
-                        eval_dataloader=eval_dataloader, 
-                        accelerate=accelerate, 
-                        id2lp=id2lp, 
+                        eval_dataloader=eval_dataloader,
+                        accelerate=accelerate,
+                        id2lp=id2lp,
                         epoch=epoch + 1,
                         activation=activation,
                     )
@@ -606,13 +655,12 @@ def main():
 
         accelerate.wait_for_everyone()
 
-
     logger.info("Final evaluation")
     evaluate(
-        model=model, 
-        eval_dataloader=eval_dataloader, 
-        accelerate=accelerate, 
-        id2lp=id2lp, 
+        model=model,
+        eval_dataloader=eval_dataloader,
+        accelerate=accelerate,
+        id2lp=id2lp,
         epoch="Last",
         activation=activation,
     )
