@@ -188,18 +188,26 @@ class DatasetWMTCL(Dataset):
         ref_I = ref_I.ravel()
         mt_I = mt_I.ravel()
 
-        for j in range(self.n_neighbors+1):
+        added_ref = 0
+        added_mt = 0
+        for j in range(self.n_neighbors+1+1):
             if ref_I[j] == idx:
                 continue
             far_point = dataset[int(ref_I[j])]
             for key in ['input_ids', 'attention_mask']:
                 output[key].append(far_point[f'ref_{key}'])
-        for j in range(self.n_neighbors):
+            added_ref += 1
+            if added_ref == self.n_neighbors + 1:
+                break
+        for j in range(self.n_neighbors+1):
             if mt_I[j] == idx:
                 continue
             far_point = dataset[int(mt_I[j])]
             for key in ['input_ids', 'attention_mask']:
                 output[key].append(far_point[f'mt_{key}'])
+            added_mt += 1
+            if added_mt == self.n_neighbors:
+                break
 
         return output
 
