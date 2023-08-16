@@ -155,7 +155,7 @@ if __name__ == '__main__':
                 n_steps_ += 1
                 if n_steps_ % CHECKPOINT_EVERY_STEP == 0:
                     save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', final=False)
-                if n_steps % EVAL_EVERY_STEP == 0:
+                if n_steps_ % EVAL_EVERY_STEP == 0:
                     accelerator.print(f'EVAL STEP {n_steps_}')
                     model.eval()
                     total_correlation = 0.0
