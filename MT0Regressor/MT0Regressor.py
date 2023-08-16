@@ -3,12 +3,12 @@ import torch.nn as nn
 from transformers import MT5EncoderModel
 from transformers.modeling_outputs import BaseModelOutput
 
-
 class Args():
     def __init__(self, encoder_name, sizes_mlp, hidden_act, dropout_coef, 
-                 need_lora, output_act, loss_fc):
+                 size_labsell, need_lora, output_act, loss_fc):
         self.encoder_name = encoder_name
         self.sizes_mlp = sizes_mlp
+        self.size_labsell = size_labsell
         self.hidden_act = hidden_act
         self.dropout_coef = dropout_coef
         self.need_lora = need_lora
@@ -16,10 +16,11 @@ class Args():
         self.loss_fc = loss_fc
 
 
-def mean_pooling(token_embeddings, attention_mask):
+def mean_pooling(token_embeddings, attention_mask):    
     input_mask_expanded = (
         attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
     )
+    
     return torch.sum(token_embeddings * input_mask_expanded, 1) / torch.clamp(
         input_mask_expanded.sum(1), min=1e-9
     )
@@ -34,26 +35,31 @@ class MT0Regressor(nn.Module):
 
         dropout_coef = config.dropout_coef
 
-        self.dropout_input = nn.Dropout(dropout_coef)
-        layers = []
+        self.mlp_labse = nn.Linear(768, config.size_labsell)
+        layers = [nn.Linear(768 + config.size_labsell, config.sizes_mlp[0]), config.hidden_act()] # last hidden layer size + labse vector size
         for i in range(len(config.sizes_mlp) - 1):
             layers.append(nn.Linear(config.sizes_mlp[i],
-                                        config.sizes_mlp[i + 1]))
+                                    config.sizes_mlp[i + 1]))
             if i < len(config.sizes_mlp) - 2:
                 layers.append(config.hidden_act())
 
+        self.dropout_input = nn.Dropout(dropout_coef)
         self.mlp = nn.Sequential(*layers)
         self.output_act = config.output_act()
 
         self.loss_fc = config.loss_fc()
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None):
+    def forward(self, input_ids=None, attention_mask=None, labels=None, labse_emb=None):
         outputs = self.llm(input_ids=input_ids, attention_mask=attention_mask)
-        embeddings = mean_pooling(
-            outputs.last_hidden_state, attention_mask=attention_mask
+        embeddings_mt0 = mean_pooling(
+            outputs.last_hidden_state, attention_mask=outputs.attentions[-1][:, 0, :, 0] * attention_mask
         )
 
-        outputs_sequence = self.dropout_input(embeddings)
+        vector_tip = self.mlp_labse(labse_emb)
+        
+        full_emb = torch.cat((embeddings_mt0, vector_tip), -1)
+
+        outputs_sequence = self.dropout_input(full_emb)
 
         logits = self.output_act(self.mlp(outputs_sequence))
 
