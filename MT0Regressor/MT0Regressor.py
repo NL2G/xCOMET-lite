@@ -52,7 +52,7 @@ class MT0Regressor(nn.Module):
     def forward(self, input_ids=None, attention_mask=None, labels=None, labse_emb=None):
         outputs = self.llm(input_ids=input_ids, attention_mask=attention_mask)
         embeddings_mt0 = mean_pooling(
-            outputs.last_hidden_state, attention_mask=outputs.attentions[-1][:, 0, :, 0] * attention_mask
+            outputs.last_hidden_state, attention_mask
         )
 
         vector_tip = self.mlp_labse(labse_emb)
