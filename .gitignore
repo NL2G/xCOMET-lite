@@ -167,6 +167,7 @@ BLEURT*
 *.pkl
 *.json
 *.txt
+!requirements.txt
 *.idx
 *.pt*
 *.safetensors
