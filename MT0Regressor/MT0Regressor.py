@@ -36,7 +36,7 @@ class MT0Regressor(nn.Module):
         dropout_coef = config.dropout_coef
 
         self.mlp_labse = nn.Linear(768, config.size_labsell)
-        layers = [nn.Linear(768 + config.size_labsell, config.sizes_mlp[0]), config.hidden_act()] # last hidden layer size + labse vector size
+        layers = [nn.Linear(1024 + config.size_labsell, config.sizes_mlp[0]), config.hidden_act()] # last hidden layer size + labse vector size
         for i in range(len(config.sizes_mlp) - 1):
             layers.append(nn.Linear(config.sizes_mlp[i],
                                     config.sizes_mlp[i + 1]))

@@ -13,6 +13,40 @@ from MT0Regressor import MT0Regressor, Args
 
 from accelerate import Accelerator
 
+CHEKPOINT_EVERY: int = 3000
+
+
+def eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, postfix: str = ""):
+    accelerator.print(f"EVAL {postfix}")
+    model.eval()
+    mse_metrics = []
+    predicted = []
+    labels = []
+    if accelerator.is_local_main_process:
+        for batch in dataloader_eval:
+            batch = {k: v.to(accelerator.device) for k, v in batch.items()}
+
+            with torch.no_grad():
+                outputs = model(**batch)
+
+                logits = outputs[1]
+
+                mse_metric = metric(logits, batch["labels"]).item()
+
+            for i in range(8):
+                predicted.append(logits[i].item())
+                labels.append(batch["labels"][i].item())
+            mse_metrics.append(mse_metric)
+            progress_bar_eval.set_postfix({"loss": mse_metric})
+            progress_bar_eval.update(1)
+
+        eval_mse = mean(mse_metrics)
+        eval_kendall = stats.kendalltau(predicted, labels).statistic
+        accelerator.print(f"Eval MSE: {eval_mse}")
+        accelerator.print(f"Eval Kendall tau-b: {eval_kendall}")
+        accelerator.log({"eval/mse": eval_mse, "eval/kendall": eval_kendall})
+
+    model.train()
 
 def main(model, dataloader_train, dataloader_eval, optimizer,
          scheduler, metric, num_epochs, num_training_steps):
@@ -24,10 +58,11 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
 
     model, optimizer, dataloader_train, scheduler = accelerator.prepare(model, optimizer, dataloader_train, scheduler)
 
+    num_local_training_steps = num_epochs * len(dataloader_train)
     accelerator.print(f"Train size: {len(dataloader_train)}")
     accelerator.print(f"Eval size: {len(dataloader_eval)}")
 
-    progress_bar_train = tqdm(range(num_training_steps), disable=not accelerator.is_local_main_process)
+    progress_bar_train = tqdm(range(num_local_training_steps), disable=not accelerator.is_local_main_process)
     progress_bar_eval = tqdm(range(num_epochs * len(dataloader_eval)), disable=not accelerator.is_local_main_process)
 
     accelerator.wait_for_everyone()
@@ -35,7 +70,7 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
     for epoch in range(num_epochs):
         accelerator.print(f"TRAIN EPOCH {epoch + 1}")
         model.train()
-        for batch in dataloader_train:
+        for i, batch in enumerate(dataloader_train):
             outputs = model(**batch)
 
             loss = outputs[2]
@@ -52,34 +87,12 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
 
             accelerator.log({"loss": loss.item()})
 
-        accelerator.print("EVAL")
-        model.eval()
-        mse_metrics = []
-        predicted = []
-        labels = []
-        if accelerator.is_local_main_process:
-            for batch in dataloader_eval:
-                batch = {k: v.to(accelerator.device) for k, v in batch.items()}
+            if (i + 1) % CHEKPOINT_EVERY == 0:
+                if accelerator.is_local_main_process:
+                    accelerator.save(model.state_dict(), f"model_large.pth")
+            accelerator.wait_for_everyone()
 
-                with torch.no_grad():
-                    outputs = model(**batch)
-
-                    logits = outputs[1]
-
-                    mse_metric = metric(logits, batch["labels"]).item()
-
-                for i in range(8):
-                    predicted.append(logits[i].item())
-                    labels.append(batch["labels"][i].item())
-                mse_metrics.append(mse_metric)
-                progress_bar_eval.set_postfix({"loss": mse_metric})
-                progress_bar_eval.update(1)
-
-            eval_mse = mean(mse_metrics)
-            eval_kendall = stats.kendalltau(predicted, labels).statistic
-            accelerator.print(f"Eval MSE: {eval_mse}")
-            accelerator.print(f"Eval Kendall tau-b: {eval_kendall}")
-            accelerator.log({"eval/mse": eval_mse, "eval/kendall": eval_kendall})
+        eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, f"EPOCH {epoch + 1} # End")
         
         accelerator.wait_for_everyone()
 
