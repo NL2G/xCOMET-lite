@@ -284,7 +284,7 @@ class ContrastiveLossWMT(nn.Module):
 
         ref_nom  = torch.exp(similarity_vector[0] / self.temperature)
         ref_denom = ref_nom + torch.exp(similarity_vector[2 : 2+self.negative_n+1] / self.temperature).sum()
-        mt_nom  = self.score_type_weights[score_type] * score * torch.exp(similarity_vector[0] / self.temperature)
+        mt_nom  = self.score_type_weights[score_type] * score * torch.exp(similarity_vector[1] / self.temperature)
         mt_denom = mt_nom + torch.exp(similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.temperature).sum()
         loss = -torch.log(ref_nom / ref_denom) - torch.log(mt_nom / mt_denom)
         return loss
