@@ -5,15 +5,23 @@ import torch
 import torch.nn as nn
 import wandb
 from torch.optim import AdamW
+import argparse as ap
+import os
 from tqdm import tqdm
+from datasets import load_from_disk
 import datetime
 from transformers import get_scheduler
+from transformers import DataCollatorWithPadding, AutoTokenizer
+from torch.utils.data import DataLoader
+from transformers.trainer_pt_utils import LengthGroupedSampler
 
 from MT0Regressor import MT0Regressor, Args
 
 from accelerate import Accelerator
 
 CHEKPOINT_EVERY: int = 3000
+USE_LABSE: bool = True
+BATCH_SIZE: int = 8
 
 
 def eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, postfix: str = ""):
@@ -33,7 +41,7 @@ def eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, postfix
 
                 mse_metric = metric(logits, batch["labels"]).item()
 
-            for i in range(8):
+            for i in range(len(logits)):
                 predicted.append(logits[i].item())
                 labels.append(batch["labels"][i].item())
             mse_metrics.append(mse_metric)
@@ -49,12 +57,7 @@ def eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, postfix
     model.train()
 
 def main(model, dataloader_train, dataloader_eval, optimizer,
-         scheduler, metric, num_epochs, num_training_steps):
-    accelerator = Accelerator(log_with='wandb')
-    accelerator.init_trackers(
-        project_name="t5regressor", 
-        init_kwargs={'entity': 'airi23-efficient-llm-metrics'}
-    )
+         scheduler, metric, num_epochs, accelerator, save_file_name):
 
     model, optimizer, dataloader_train, scheduler = accelerator.prepare(model, optimizer, dataloader_train, scheduler)
 
@@ -89,7 +92,7 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
 
             if (i + 1) % CHEKPOINT_EVERY == 0:
                 if accelerator.is_local_main_process:
-                    accelerator.save(model.state_dict(), f"model_large.pth")
+                    accelerator.save(model.state_dict(), save_file_name)
             accelerator.wait_for_everyone()
 
         eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, f"EPOCH {epoch + 1} # End")
@@ -97,11 +100,40 @@ def main(model, dataloader_train, dataloader_eval, optimizer,
         accelerator.wait_for_everyone()
 
     if accelerator.is_local_main_process:
-        accelerator.save(model.state_dict(), f"model_large.pth")
+        accelerator.save(model.state_dict(), save_file_name)
 
 
 if __name__ == "__main__":
-    model_encoder_name = "bigscience/mt0-large"
+
+    parser: ap.ArgumentParser = ap.ArgumentParser(
+        prog='train.py',
+    )
+    parser.add_argument(
+        "--no-use-labse", action='store_true', default=False
+    )
+    parser.add_argument(
+        "--save-file-name", default="model-large.pth", type=str,
+    )
+    parser.add_argument(
+        "--model-name", type=str, default="bigscience/mt0-large"
+    )
+    parser.add_argument(
+        "--batch-size", default=8, type=int
+    )
+
+    args: ap.Namespace = parser.parse_args()
+
+    accelerator = Accelerator(log_with='wandb')
+    accelerator.init_trackers(
+        project_name="t5regressor", 
+        init_kwargs={'entity': 'airi23-efficient-llm-metrics'}
+    )
+
+    accelerator.print(f"Running with args: {args}")
+
+    model_encoder_name = args.model_name
+
+    use_labse = not args.no_use_labse
 
     config = Args(
         encoder_name=model_encoder_name,
@@ -112,16 +144,42 @@ if __name__ == "__main__":
         need_lora=False,
         output_act=nn.Sigmoid,
         loss_fc=nn.MSELoss,
+        use_labse=use_labse
     )
 
     model = MT0Regressor(config)
 
-    print("Model successfully loaded.")
+    accelerator.print(f"Loaded model {model}")
+    
+    tokenizer = AutoTokenizer.from_pretrained(model_encoder_name)
 
-    dataloader_train = torch.load('dataloader_train_large_labse.pth')
-    dataloader_eval = torch.load('dataloader_eval_large_labse.pth')
+    dataset = load_from_disk("./wmt-labse")
 
-    print("DataLoaders successfully loaded.")
+    if not use_labse:
+        accelerator.print("Dropping LaBSE columns")
+        dataset = dataset.remove_columns(['labse'])
+
+    collator_fn = DataCollatorWithPadding(
+        tokenizer=tokenizer, padding="longest", max_length=512, return_tensors="pt", pad_to_multiple_of=8
+    )
+    with accelerator.main_process_first():
+        lenghts = dataset['train'].map(lambda x: {'len': len(x['input_ids'])}, batched=False, num_proc=20)['len']
+        
+    length_sampler = LengthGroupedSampler(batch_size=args.batch_size, dataset=dataset['train'], lengths=lenghts)
+    dataloader_train = DataLoader(
+        dataset["train"],
+        batch_size=args.batch_size,
+        sampler=length_sampler,
+        collate_fn=collator_fn
+    )
+    dataloader_eval = DataLoader(
+        dataset["test"],
+        batch_size=args.batch_size,
+        collate_fn=collator_fn,
+        shuffle=False
+    )
+
+    accelerator.print("DataLoaders successfully loaded.")
 
     optimizer = AdamW(model.parameters(), lr=3e-4)
 
@@ -136,5 +194,15 @@ if __name__ == "__main__":
     
     metric = nn.MSELoss()
 
-    main(model=model, dataloader_train=dataloader_train, dataloader_eval=dataloader_eval, optimizer=optimizer,
-         scheduler=lr_scheduler, metric=metric, num_epochs=num_epochs, num_training_steps=num_training_steps)
+    accelerator.print("Starting training =>")
+    main(
+        model=model, 
+        dataloader_train=dataloader_train,
+        dataloader_eval=dataloader_eval, 
+        optimizer=optimizer,
+        scheduler=lr_scheduler, 
+        metric=metric, 
+        num_epochs=num_epochs, 
+        accelerator=accelerator,
+        save_file_name=args.save_file_name
+    )
