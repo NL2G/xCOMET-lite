@@ -20,13 +20,12 @@ export SEED=42
 
 export WANDB_NAME="trainer@run"
 export WANDB_PROJECT="wmt23-trainer"
-export WANDB_RUN_GROUP="run-1b-lora-test"
+export WANDB_RUN_GROUP="run-1b1"
 export WANDB_ENTITY="airi23-efficient-llm-metrics"
-export OUTPUT_DIR="./trainer-model"
+export OUTPUT_DIR="./bloomz-1b1-scorer"
 
-accelerate launch train.py \
-    --max_train_samples=25600 \
-    --max_eval_samples=6400 \
+accelerate launch prompt-regressor/train.py \
+    --ddp_find_unused_parameters=false \
 	--model_name_or_path="bigscience/bloomz-1b1" \
     --output_dir=$OUTPUT_DIR \
 	--dataset_name="nllg/wmt-metrics-data" \
@@ -44,11 +43,11 @@ accelerate launch train.py \
 	--do_train \
 	--do_eval \
 	--evaluation_strategy="steps" \
-	--eval_steps=50 \
-	--per_device_train_batch_size=8 \
+	--eval_steps=3500 \
+	--per_device_train_batch_size=16 \
 	--per_device_eval_batch_size=16 \
-	--gradient_accumulation_steps=8 \
-	--eval_accumulation_steps=4 \
+	--gradient_accumulation_steps=4 \
+	--eval_accumulation_steps=1 \
 	--learning_rate=5e-5 \
 	--weight_decay=0.01 \
 	--lr_scheduler_type="cosine" \
@@ -57,7 +56,7 @@ accelerate launch train.py \
 	--logging_steps=50 \
 	--save_strategy="steps" \
 	--save_total_limit=3 \
-	--save_steps=100 \
+	--save_steps=3500 \
 	--save_safetensors \
     --bf16 \
 	--tf32=true \
@@ -73,5 +72,5 @@ accelerate launch train.py \
     --hub_model_id="nllg/bloomscore-1b1" \
     --hub_strategy="end" \
     --hub_private_repo \
-    --hub_token="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"
+    --hub_token="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"
 
