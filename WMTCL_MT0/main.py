@@ -155,8 +155,8 @@ if __name__ == '__main__':
                 accelerator.log(log_)
 
                 n_steps_ += 1
-                if n_steps_ % CHECKPOINT_EVERY_STEP == 0:
-                    save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', final=False)
+                # if n_steps_ % CHECKPOINT_EVERY_STEP == 0:
+                #     save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', final=False)
                 if n_steps_ % EVAL_EVERY_STEP == 0:
                     accelerator.print(f'EVAL STEP {n_steps_}')
                     model.eval()
@@ -178,9 +178,11 @@ if __name__ == '__main__':
                                 log_ = {'src & ref correlation': total_correlation / total_}
                                 pbar.set_postfix(log_)
 
-                        log_ = {'src & ref correlation': total_correlation / total_}
-                        accelerator.print(f'src & ref correlation: {total_correlation / total_}')
+                        eval_val = total_correlation / total_
+                        log_ = {'src & ref correlation': eval_val}
+                        accelerator.print(f'src & ref correlation: {eval_val}')
                         accelerator.log(log_)
+                        save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', n_steps=n_steps, eval_val=eval_val, final=False)
                     model.train()
 
         accelerator.wait_for_everyone()
