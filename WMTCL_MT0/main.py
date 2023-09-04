@@ -93,7 +93,7 @@ if __name__ == '__main__':
 
     with accelerator.main_process_first():
         model = MT5EncoderModel.from_pretrained(MT0_MODEL, torch_dtype=torch.bfloat16)
-        
+
     model.gradient_checkpointing_enable()
 
     #optimizer = torch.optim.AdamW(
@@ -105,12 +105,14 @@ if __name__ == '__main__':
     )
 
     optimizer = PagedLion8bit(
+        lr=LEARINING_RATE, # default: 1e-4
         params=model.parameters(),
         weight_decay=WEIGHT_DECAY
     )
 
-
-    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=NUM_WARMUP_STEPS, num_training_steps=(N_EPOCHS * len(train_dataloader)))
+    num_training_steps = N_EPOCHS * len(train_dataloader)
+    num_warmup_steps = int(num_training_steps * WARMUP_STEPS_RATIO)
+    scheduler = get_scheduler('linear', optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps)
     loss = ContrastiveLossWMT(
         wmtcl_train_dset.n_neighbors,
         score_type_weights=SCORE_TYPE_WEIGHTS
@@ -168,14 +170,14 @@ if __name__ == '__main__':
                                 outputs = torch.nn.functional.normalize(outputs, dim=1)
                                 embs_src = outputs[0::2]
                                 embs_ref = outputs[1::2]
-            
+
                                 correlation_ = (embs_src @ embs_ref.T).diag().sum().item()
                                 total_correlation += correlation_
                                 total_ += (len(batch) / 2)
-            
+
                                 log_ = {'src & ref correlation': total_correlation / total_}
                                 pbar.set_postfix(log_)
-            
+
                         log_ = {'src & ref correlation': total_correlation / total_}
                         accelerator.print(f'src & ref correlation: {total_correlation / total_}')
                         accelerator.log(log_)
