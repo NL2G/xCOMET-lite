@@ -171,3 +171,6 @@ BLEURT*
 *.idx
 *.pt*
 *.safetensors
+*.arrow
+*.ckpt
+*.out

@@ -5,7 +5,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 class Args():
     def __init__(self, encoder_name, sizes_mlp, hidden_act, dropout_coef, 
-                 size_labsell, need_lora, output_act, loss_fc):
+                 size_labsell, need_lora, output_act, loss_fc, use_labse):
         self.encoder_name = encoder_name
         self.sizes_mlp = sizes_mlp
         self.size_labsell = size_labsell
@@ -14,6 +14,8 @@ class Args():
         self.need_lora = need_lora
         self.output_act = output_act
         self.loss_fc = loss_fc
+        self.use_labse = use_labse
+        print(f"USE_LABSE == {use_labse}")
 
 
 def mean_pooling(token_embeddings, attention_mask):    
@@ -35,8 +37,13 @@ class MT0Regressor(nn.Module):
 
         dropout_coef = config.dropout_coef
 
-        self.mlp_labse = nn.Linear(768, config.size_labsell)
-        layers = [nn.Linear(1024 + config.size_labsell, config.sizes_mlp[0]), config.hidden_act()] # last hidden layer size + labse vector size
+        self.use_labse = config.use_labse
+
+        if self.use_labse:
+            self.mlp_labse = nn.Linear(768*3, config.size_labsell)
+            layers = [nn.Linear(1024 + config.size_labsell, config.sizes_mlp[0]), config.hidden_act()]
+        else:
+            layers = [nn.Linear(1024, config.sizes_mlp[0]), config.hidden_act()] # last hidden layer size + labse vector size
         for i in range(len(config.sizes_mlp) - 1):
             layers.append(nn.Linear(config.sizes_mlp[i],
                                     config.sizes_mlp[i + 1]))
@@ -49,15 +56,17 @@ class MT0Regressor(nn.Module):
 
         self.loss_fc = config.loss_fc()
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None, labse_emb=None):
+    def forward(self, input_ids=None, attention_mask=None, labels=None, labse=None):
         outputs = self.llm(input_ids=input_ids, attention_mask=attention_mask)
         embeddings_mt0 = mean_pooling(
             outputs.last_hidden_state, attention_mask
         )
 
-        vector_tip = self.mlp_labse(labse_emb)
-        
-        full_emb = torch.cat((embeddings_mt0, vector_tip), -1)
+        if self.use_labse:
+            vector_tip = self.mlp_labse(labse)
+            full_emb = torch.cat((embeddings_mt0, vector_tip), -1)
+        else:
+            full_emb = embeddings_mt0
 
         outputs_sequence = self.dropout_input(full_emb)
 
