@@ -120,6 +120,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch-size", default=8, type=int
     )
+    parser.add_argument(
+        "--checkpoint", type=str, default=None
+    )
 
     args: ap.Namespace = parser.parse_args()
 
@@ -144,7 +147,8 @@ if __name__ == "__main__":
         need_lora=False,
         output_act=nn.Sigmoid,
         loss_fc=nn.MSELoss,
-        use_labse=use_labse
+        use_labse=use_labse,
+        checkpoint=args.checkpoint
     )
 
     model = MT0Regressor(config)
@@ -181,9 +185,9 @@ if __name__ == "__main__":
 
     accelerator.print("DataLoaders successfully loaded.")
 
-    optimizer = AdamW(model.parameters(), lr=3e-4)
+    optimizer = AdamW(model.parameters(), lr=(5e-5*accelerator.num_processes))
 
-    num_epochs = 3
+    num_epochs = 1
     num_training_steps = num_epochs * len(dataloader_train)
     lr_scheduler = get_scheduler(
         "linear",

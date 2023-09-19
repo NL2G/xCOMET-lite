@@ -23,6 +23,8 @@ import wandb
 from accelerate import dispatch_model, infer_auto_device_map
 from accelerate.utils import get_balanced_memory
 from accelerate import Accelerator
+from transformers.trainer_pt_utils import get_parameter_names
+from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 
 from transformers import AutoTokenizer, MT5EncoderModel
 from transformers import DataCollatorWithPadding
@@ -103,10 +105,31 @@ if __name__ == '__main__':
     GlobalOptimManager.get_instance().register_module_override(
         model.get_input_embeddings(), 'weight', {"optim_bits": 32}
     )
+    decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if (n in decay_parameters and p.requires_grad)
+            ],
+            "weight_decay": WEIGHT_DECAY,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if (n not in decay_parameters and p.requires_grad)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
+
 
     optimizer = PagedLion8bit(
-        lr=LEARINING_RATE, # default: 1e-4
-        params=model.parameters(),
+        lr=LEARNING_RATE, # default: 1e-4
+        params=optimizer_grouped_parameters,
         weight_decay=WEIGHT_DECAY
     )
 
@@ -139,13 +162,13 @@ if __name__ == '__main__':
                 outputs = mean_pooling(outputs.last_hidden_state, batch['attention_mask'])
 
                 loss_ = loss(outputs, score, score_type)
-                free_()
+                #free_()
 
                 accelerator.backward(loss_)
-                free_()
+                #free_()
 
                 optimizer.step()
-                free_()
+                #free_()
 
                 scheduler.step()
                 optimizer.zero_grad()
@@ -182,7 +205,7 @@ if __name__ == '__main__':
                         log_ = {'src & ref correlation': eval_val}
                         accelerator.print(f'src & ref correlation: {eval_val}')
                         accelerator.log(log_)
-                        save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', n_steps=n_steps, eval_val=eval_val, final=False)
+                        save_model(model, accelerator, f'{MODEL_DIR}/wmtcl_mt0_encoder.ckpt', n_steps=n_steps_, eval_val=eval_val, final=False)
                     model.train()
 
         accelerator.wait_for_everyone()

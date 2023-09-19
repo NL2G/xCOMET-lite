@@ -86,14 +86,15 @@ def get_lp_training_staff(train_dset, st_model):
     lp2ref_index = {}
     lp2mt_index = {}
 
-    st = SentenceTransformer(st_model)
-    pool = st.start_multi_process_pool()
+    st, pool = None, None
     for lp in LANG_PAIRS:
 
         dset_path = f'{DATA_DIR}/{lp}_dset.pt'
         if os.path.exists(dset_path):
             lp_dset = torch.load(dset_path)
         else:
+            st = SentenceTransformer(st_model)
+            pool = st.start_multi_process_pool()
             lp_dset = train_dset.filter(lambda x: x['lp'] == lp).shuffle(seed=SEED)
             src_embs_dset = Dataset.from_dict({'src_emb': st.encode_multi_process(lp_dset['src'], pool, batch_size=128)})
             lp_dset = datasets.concatenate_datasets([lp_dset, src_embs_dset], axis=1)
@@ -103,12 +104,24 @@ def get_lp_training_staff(train_dset, st_model):
         ref_index_path = f'{DATA_DIR}/{lp}_ref_faiss.idx'
         mt_index_path = f'{DATA_DIR}/{lp}_mt_faiss.idx'
 
-        lp2ref_index[lp] = faiss.read_index(ref_index_path) if os.path.exists(ref_index_path) else \
-                prepare_faiss(st, pool, lp_dset['ref'], save_filepath=ref_index_path)
-        lp2mt_index[lp] = faiss.read_index(mt_index_path) if os.path.exists(mt_index_path) else \
-                prepare_faiss(st, pool, lp_dset['mt'], save_filepath=mt_index_path)
+        if os.path.exists(ref_index_path):
+            lp2ref_index[lp] = faiss.read_index(ref_index_path)
+        else:
+            if st is None:
+                st = SentenceTransformer(st_model)
+                pool = st.start_multi_process_pool()
+            lp2ref_index[lp] = prepare_faiss(st, pool, lp_dset['ref'], save_filepath=ref_index_path)
 
-    st.stop_multi_process_pool(pool)
+        if os.path.exists(mt_index_path):
+            lp2mt_index[lp] = faiss.read_index(mt_index_path)
+        else:
+            if st is None:
+                st = SentenceTransformer(st_model)
+                pool = st.start_multi_process_pool()
+            lp2mt_index[lp] = prepare_faiss(st, pool, lp_dset['mt'], save_filepath=mt_index_path)
+
+    if st is not None:
+        st.stop_multi_process_pool(pool)
     return lp2train_dset, lp2ref_index, lp2mt_index
 
 

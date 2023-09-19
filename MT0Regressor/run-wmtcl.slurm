@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-#SBATCH --job-name=wmtcl_mt0
+#SBATCH --job-name=cl-labse-train-regressor
 #SBATCH --gres=gpu:4
 #SBATCH --time=72:00:00
 #SBATCH --mem=256GB
@@ -17,4 +17,4 @@ nvidia-smi
 echo "==============================="
 echo "Using GPUs: $CUDA_VISIBLE_DEVICES"
 echo "==============================="
-accelerate launch main.py
+accelerate launch train.py --checkpoint="wmtcl.ckpt" --save-file-name="mt0-large-wmtcl-labse.pth"
