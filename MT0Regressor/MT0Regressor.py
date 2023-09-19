@@ -5,7 +5,7 @@ from transformers.modeling_outputs import BaseModelOutput
 
 class Args():
     def __init__(self, encoder_name, sizes_mlp, hidden_act, dropout_coef, 
-                 size_labsell, need_lora, output_act, loss_fc, use_labse):
+                 size_labsell, need_lora, output_act, loss_fc, use_labse, checkpoint: str = None):
         self.encoder_name = encoder_name
         self.sizes_mlp = sizes_mlp
         self.size_labsell = size_labsell
@@ -15,6 +15,7 @@ class Args():
         self.output_act = output_act
         self.loss_fc = loss_fc
         self.use_labse = use_labse
+        self.checkpoint = checkpoint
         print(f"USE_LABSE == {use_labse}")
 
 
@@ -29,11 +30,17 @@ def mean_pooling(token_embeddings, attention_mask):
 
 
 class MT0Regressor(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config: Args):
         super(MT0Regressor, self).__init__()
 
         self.llm = MT5EncoderModel.from_pretrained(
             config.encoder_name, output_attentions=True, output_hidden_states=True)
+        
+        if config.checkpoint is not None:
+            checkpoint = torch.load(config.checkpoint)
+            checkpoint = {key.replace("module.", ""):value for key, value in checkpoint.items()}
+            self.llm.load_state_dict(checkpoint)
+            print(f"Checkpoint loaded")
 
         dropout_coef = config.dropout_coef
 
