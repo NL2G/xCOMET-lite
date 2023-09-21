@@ -279,13 +279,15 @@ class ContrastiveLossWMT(nn.Module):
         self,
         negative_n, # n_neighbors from dataset initialization
         score_type_weights=None, # prioritization of score types
-        temperature=0.05,
+        ref_temperature=REF_TEMPERATURE,
+        mt_temperature=MT_TEMPERATURE,
         device='cpu'
     ):
         super().__init__()
         self.negative_n = negative_n
         self.score_type_weights = score_type_weights
-        self.register_buffer("temperature", torch.tensor(temperature, device=device))
+        self.register_buffer("ref_temperature", torch.tensor(ref_temperature, device=device))
+        self.register_buffer("mt_temperature", torch.tensor(mt_temperature, device=device))
 
     def forward(self, embs: torch.Tensor, score: float, score_type: str):
         embs = torch.nn.functional.normalize(embs, dim=1)
@@ -294,9 +296,9 @@ class ContrastiveLossWMT(nn.Module):
         similarity_vector = src_emb @ tgt_embs.T
         similarity_vector = similarity_vector.squeeze()
 
-        ref_nom  = torch.exp(similarity_vector[0] / self.temperature)
-        ref_denom = ref_nom + torch.exp(similarity_vector[2 : 2+self.negative_n+1] / self.temperature).sum()
-        mt_nom  = torch.exp(similarity_vector[1] / self.temperature) / (self.score_type_weights[score_type] * score)
-        mt_denom = mt_nom + torch.exp(similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.temperature).sum()
+        ref_nom  = torch.exp(similarity_vector[0] / self.ref_temperature)
+        ref_denom = ref_nom + torch.exp(similarity_vector[2 : 2+self.negative_n+1] / self.ref_temperature).sum()
+        mt_nom  = torch.exp((self.score_type_weights[score_type] * score) * similarity_vector[1] / self.mt_temperature)
+        mt_denom = mt_nom + torch.exp(similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.mt_temperature).sum()
         loss = -torch.log(ref_nom / ref_denom) - torch.log(mt_nom / mt_denom)
         return loss
