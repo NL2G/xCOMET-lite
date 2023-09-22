@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 #SBATCH --job-name=cl-no-labse-train-regressor
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:8
+#SBATCH --partition=intel-gpu
 #SBATCH --time=72:00:00
 #SBATCH --mem=256GB
 #SBATCH --output=./outputs-%j.txt
@@ -17,4 +18,4 @@ nvidia-smi
 echo "==============================="
 echo "Using GPUs: $CUDA_VISIBLE_DEVICES"
 echo "==============================="
-accelerate launch train.py --checkpoint="wmtcl.ckpt" --no-use-labse --save-file-name="mt0-large-wmtcl-no-labse.pth"
+accelerate launch --config_file="8xgpu.yaml" train.py --checkpoint="wmtcl.ckpt" --no-use-labse --save-file-name="mt0-large-wmtcl-no-labse.pth"
