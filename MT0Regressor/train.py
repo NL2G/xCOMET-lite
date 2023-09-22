@@ -8,12 +8,15 @@ from torch.optim import AdamW
 import argparse as ap
 import os
 from tqdm import tqdm
-from datasets import load_from_disk
+from datasets import load_from_disk, load_dataset
 import datetime
 from transformers import get_scheduler
 from transformers import DataCollatorWithPadding, AutoTokenizer
 from torch.utils.data import DataLoader
 from transformers.trainer_pt_utils import LengthGroupedSampler
+from transformers.trainer_pt_utils import get_parameter_names
+from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
+from bitsandbytes.optim import GlobalOptimManager, AdamW8bit
 
 from MT0Regressor import MT0Regressor, Args
 
@@ -21,7 +24,8 @@ from accelerate import Accelerator
 
 CHEKPOINT_EVERY: int = 3000
 USE_LABSE: bool = True
-BATCH_SIZE: int = 8
+BATCH_SIZE: int = 16
+WEIGHT_DECAY: float = 0.1
 
 
 def eval(accelerator, model, dataloader_eval, progress_bar_eval, metric, postfix: str = ""):
@@ -157,7 +161,13 @@ if __name__ == "__main__":
     
     tokenizer = AutoTokenizer.from_pretrained(model_encoder_name)
 
-    dataset = load_from_disk("./wmt-labse")
+    dataset = load_dataset(
+        "nllg/wmt-metrics-data",
+        name='mt0-labse',
+        token='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'
+    )
+        
+    #load_from_disk("./wmt-labse")
 
     if not use_labse:
         accelerator.print("Dropping LaBSE columns")
@@ -185,14 +195,42 @@ if __name__ == "__main__":
 
     accelerator.print("DataLoaders successfully loaded.")
 
-    optimizer = AdamW(model.parameters(), lr=(5e-5*accelerator.num_processes))
+    decay_parameters = get_parameter_names(model, ALL_LAYERNORM_LAYERS)
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if (n in decay_parameters and p.requires_grad)
+            ],
+            "weight_decay": WEIGHT_DECAY,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.named_parameters()
+                if (n not in decay_parameters and p.requires_grad)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
 
-    num_epochs = 1
+    GlobalOptimManager.get_instance().register_module_override(
+        model.llm.get_input_embeddings(), 'weight', {"optim_bits": 32}
+    )
+
+    optimizer = AdamW8bit(
+        optimizer_grouped_parameters, 
+        lr=(5e-5*accelerator.num_processes)
+    )
+
+    num_epochs = 3
     num_training_steps = num_epochs * len(dataloader_train)
     lr_scheduler = get_scheduler(
         "linear",
         optimizer=optimizer,
-        num_warmup_steps=0,
+        num_warmup_steps=int(round(0.1*(num_training_steps))),
         num_training_steps=num_training_steps,
     )
     

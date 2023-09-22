@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 #SBATCH --job-name=train-regressor
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
+#SBATCH --partition=intel-a100-pci3
 #SBATCH --time=72:00:00
 #SBATCH --mem=256GB
 #SBATCH --output=./outputs-%j.txt
@@ -17,4 +18,4 @@ nvidia-smi
 echo "==============================="
 echo "Using GPUs: $CUDA_VISIBLE_DEVICES"
 echo "==============================="
-accelerate launch train.py
+accelerate launch --config_file="2xgpu.yaml" train.py --save-file-name="mt0-large-labse.pth"
