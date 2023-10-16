@@ -61,10 +61,10 @@ def prepare_faiss(
     model,
     pool,
     sentences,
-    nlist=100, # voronoi cells for ANN
-    m=16, # number of centroid IDs in final compressed vectors
-    bits=8,  # number of bits in each centroid
-    nprobe=10, # number of cells to search during inference,
+    nlist=1000, # voronoi cells for ANN
+    m=64, # number of centroid IDs in final compressed vectors
+    bits=12,  # number of bits in each centroid
+    nprobe=200, # number of cells to search during inference,
     save_filepath=None
 ):
     embs = model.encode_multi_process(sentences, pool, batch_size=128)
@@ -294,11 +294,13 @@ class ContrastiveLossWMT(nn.Module):
         score_type_weights=None, # prioritization of score types
         ref_temperature=REF_TEMPERATURE,
         mt_temperature=MT_TEMPERATURE,
+        mt_add_score_as_temp=MT_ADD_SCORE_AS_TEMP
         device='cpu'
     ):
         super().__init__()
         self.negative_n = negative_n
         self.score_type_weights = score_type_weights
+        self.mt_add_score_as_temp = mt_add_score_as_temp
         self.register_buffer("ref_temperature", torch.tensor(ref_temperature, device=device))
         self.register_buffer("mt_temperature", torch.tensor(mt_temperature, device=device))
 
@@ -312,6 +314,9 @@ class ContrastiveLossWMT(nn.Module):
         ref_nom  = torch.exp(similarity_vector[0] / self.ref_temperature)
         ref_denom = ref_nom + torch.exp(similarity_vector[2 : 2+self.negative_n+1] / self.ref_temperature).sum()
         mt_nom  = torch.exp((self.score_type_weights[score_type] * score) * similarity_vector[1] / self.mt_temperature)
-        mt_denom = mt_nom + torch.exp(similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.mt_temperature).sum()
+        if mt_add_score_as_temp:
+            mt_denom = mt_nom + torch.exp((self.score_type_weights[score_type] * score) * similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.mt_temperature).sum()
+        else:
+            mt_denom = mt_nom + torch.exp(similarity_vector[2+self.negative_n+1 : 2+2*self.negative_n+1] / self.mt_temperature).sum()
         loss = -torch.log(ref_nom / ref_denom) - torch.log(mt_nom / mt_denom)
         return loss
