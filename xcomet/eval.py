@@ -1,11 +1,15 @@
 import os
+import time
+from pathlib import Path
+from argparse import ArgumentParser
+
 import torch
 import numpy as np
-
-from scipy.stats import kendalltau
-from argparse import ArgumentParser
 from datasets import load_dataset
+from scipy.stats import kendalltau
 from comet import download_model, load_from_checkpoint
+
+from utils import load_json, dump_json
 
 def make_parser():
     parser = ArgumentParser(description="xCOMET evaluation.")
@@ -14,57 +18,86 @@ def make_parser():
     parser.add_argument("--lp", help="On which language pair to compute metrics")
     parser.add_argument("--domain", default="news", help="On which domain to compute metrics")
     parser.add_argument("--year", default=2022, help="In which year to compute metrics")
-    parser.add_argument("--force", default=False, action="store_true", help="Overwrite experiment with this output folder")
+    parser.add_argument("--seed", default=0, help="Random seed to fix")
+    parser.add_argument("--n_gpus", default=1, help="Amount of GPUs utilized")
+    parser.add_argument("--batch_size", default=8, help="Inference batch size")
 
     return parser
 
+
 @torch.inference_mode()
 def main():
-    torch.set_float32_matmul_precision("medium")
-
+# Get arguments
     parser = make_parser()
     args = parser.parse_args()
     print(args)
-    if not args.force and os.path.exists(args.output):
-        print(f"Folder {args.output} already exists. Change output folder or use --force flag.")
-        return
 
-    dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation", split="train")
-    dataset = dataset.filter(lambda example: example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
-    print("N samples:", len(dataset))
-    print("First sample:\n", dataset[0], "\n")
+# Setup environment
+    torch.set_float32_matmul_precision("medium")
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
 
-    segment_score_path = f"{args.output}/model_segment_level_scores.npy"
+# Start logic
+    output_path = Path(args.output)
 
-    if not os.path.exists(segment_score_path):
+    if not os.path.exists(output_path):
+        print("Loading dataset...")
+        start = time.perf_counter()
+        dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation", split="train")
+        dataset = dataset.filter(lambda example: example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
+        dataset_load_time = time.perf_counter() - start
+        print("N samples:", len(dataset))
+        print("First sample:\n", dataset[0], "\n")
+
+        start = time.perf_counter()
         model_path = download_model(args.model)
         model = load_from_checkpoint(model_path).half()
-        
-        # for name, parameter in model.named_parameters():
-        #     if not ("Norm" in name or "bias" in name or "scalar_parameters" in name):
-        #         model.state_dict()[name] = parameter.half()
-
-        print(model.encoder.model.encoder.layer[0].output.dense.weight.dtype)
+        model_load_time = time.perf_counter() - start
 
         print("Computing metric...")
-        model_output = model.predict([sample for sample in dataset], batch_size=8, gpus=1)
-        # Segment-level scores
+        start = time.perf_counter()
+        model_output = model.predict([sample for sample in dataset], batch_size=args.batch_size, gpus=args.n_gpus)
+        prediction_time = time.perf_counter() - start
+
         os.makedirs(args.output, exist_ok=True)
         segment_scores = np.array(model_output.scores)
-        np.save(segment_score_path, segment_scores)
+
+        peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
+        kendall_corr = kendalltau(dataset["score"], segment_scores)
+
+        report = {
+            "kendall_correlation": kendall_corr[0],
+            "kendall_p_value": kendall_corr[1], 
+            "peak_memory_mb": peak_memory_mb,
+            "system_level_score": model_output.system_score,
+            "dataset_load_time": round(dataset_load_time, 2),
+            "model_load_time": round(model_load_time, 2),
+            "prediction_time": round(prediction_time, 2),
+            "dataset_length": len(dataset),
+            
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+            "torch.version.cuda": torch.version.cuda,  # type: ignore[code]
+            "torch.backends.cudnn.version()": torch.backends.cudnn.version(),  # type: ignore[code]
+            "torch.cuda.nccl.version()": torch.cuda.nccl.version(),  # type: ignore[code]
+        }    
+        report = report | vars(args) 
+
+        np.save(output_path / "model_segment_level_scores.npy", segment_scores)
+        dump_json(report, output_path / "report.json")
+        dump_json(model_output.metadata.error_spans, output_path / "error_spans.json")
+
     else:
-        segment_scores = np.load(segment_score_path)
+        print("Reusing previous results. Change output folder or delete this folder to recompute.")
+        segment_scores = np.load(output_path / "model_segment_level_scores.npy")
+        error_spans = load_json(output_path / "error_spans.json")
+        report = load_json(output_path / "report.json")
 
-    print("Max memory:", torch.cuda.max_memory_allocated() // 2 ** 20, "Mb")
-
-    kendall_corr = kendalltau(dataset["score"], segment_scores)
-    print("Kendall correlation:", kendall_corr)
-
-    # # System-level score
-    # print("System score:", model_output.system_score)
-
-    # # Score explanation (error spans)
-    # print(model_output.metadata.error_spans)
+    print("Dataset load time:", report["dataset_load_time"])
+    print("Model load time:", report["model_load_time"])
+    print("Prediction time:", report["prediction_time"], "\n")
+    print("Max memory:", report["peak_memory_mb"], "Mb")
+    print("Kendall correlation:", report["kendall_correlation"])
 
 if __name__ == "__main__":
     main()
