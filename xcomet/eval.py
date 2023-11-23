@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 
 import torch
 import numpy as np
+import pandas as pd
 from datasets import load_dataset
 from scipy.stats import kendalltau
 from comet import download_model, load_from_checkpoint
@@ -13,17 +14,24 @@ from utils import load_json, dump_json
 
 def make_parser():
     parser = ArgumentParser(description="xCOMET evaluation.")
-    parser.add_argument("-o", "--output", help="Where to save results")
-    parser.add_argument("--model", help="Which model to use")
-    parser.add_argument("--lp", help="On which language pair to compute metrics")
+    parser.add_argument("-o", "--output", help="Where to save results", required=True)
+    parser.add_argument("--model", help="Which model to use", required=True)
+    parser.add_argument("--lp", help="On which language pair to compute metrics", required=True)
+    parser.add_argument("--dataset", help="Which dataset to use", required=True)
     parser.add_argument("--domain", default="news", help="On which domain to compute metrics")
     parser.add_argument("--year", default=2022, help="In which year to compute metrics")
     parser.add_argument("--seed", default=0, help="Random seed to fix")
-    parser.add_argument("--n_gpus", default=1, help="Amount of GPUs utilized")
+    parser.add_argument("--n_gpus", type=int, default=1, help="Amount of GPUs utilized")
     parser.add_argument("--batch_size", default=8, help="Inference batch size")
 
     return parser
 
+
+def load_tsv(path):
+    data = pd.read_csv(path, sep="\t")
+    data.index = np.arange(len(data))
+    data = data.drop(columns=["Unnamed: 0"])
+    return data
 
 @torch.inference_mode()
 def main():
@@ -44,8 +52,18 @@ def main():
     if not os.path.exists(output_path):
         print("Loading dataset...")
         start = time.perf_counter()
-        dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation", split="train")
-        dataset = dataset.filter(lambda example: example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
+
+        if args.dataset.endswith(".tsv"):
+            print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local datasets.")
+            dataset = load_tsv(args.dataset)
+            ground_truth = dataset["score"]
+            dataset = list(dataset.T.to_dict().values())
+        else:
+            dataset = load_dataset(args.dataset, split="train")
+            dataset = dataset.filter(lambda example: example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
+            ground_truth = dataset["score"]
+            dataset = [sample for sample in dataset]
+
         dataset_load_time = time.perf_counter() - start
         print("N samples:", len(dataset))
         print("First sample:\n", dataset[0], "\n")
@@ -57,14 +75,14 @@ def main():
 
         print("Computing metric...")
         start = time.perf_counter()
-        model_output = model.predict([sample for sample in dataset], batch_size=args.batch_size, gpus=args.n_gpus)
+        model_output = model.predict(dataset, batch_size=args.batch_size, gpus=args.n_gpus)
         prediction_time = time.perf_counter() - start
 
         os.makedirs(args.output, exist_ok=True)
         segment_scores = np.array(model_output.scores)
 
         peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
-        kendall_corr = kendalltau(dataset["score"], segment_scores)
+        kendall_corr = kendalltau(ground_truth, segment_scores)
 
         report = {
             "kendall_correlation": kendall_corr[0],
