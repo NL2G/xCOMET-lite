@@ -14,15 +14,15 @@ from utils import load_json, dump_json
 
 def make_parser():
     parser = ArgumentParser(description="xCOMET evaluation.")
-    parser.add_argument("-o", "--output", help="Where to save results", required=True)
-    parser.add_argument("--model", help="Which model to use", required=True)
+    parser.add_argument("-o", "--output", help="Where to save results, in format root_results_directory/experiment_name", required=True)
+    parser.add_argument("--model", help="Which model to use (name on huggingface)", required=True)
     parser.add_argument("--lp", help="On which language pair to compute metrics", required=True)
-    parser.add_argument("--dataset", help="Which dataset to use", required=True)
+    parser.add_argument("--dataset", help="Which dataset to use (huggingface dataset/path to tsv file)", required=True)
     parser.add_argument("--domain", default="news", help="On which domain to compute metrics")
-    parser.add_argument("--year", default=2022, help="In which year to compute metrics")
-    parser.add_argument("--seed", default=0, help="Random seed to fix")
-    parser.add_argument("--n_gpus", type=int, default=1, help="Amount of GPUs utilized")
-    parser.add_argument("--batch_size", default=8, help="Inference batch size")
+    parser.add_argument("--year", type=int, default=2022, help="In which year to compute metrics")
+    parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
+    parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
+    parser.add_argument("--batch-size", type=int, default=8, help="Inference batch size")
 
     return parser
 
@@ -32,6 +32,7 @@ def load_tsv(path):
     data.index = np.arange(len(data))
     data = data.drop(columns=["Unnamed: 0"])
     return data
+
 
 @torch.inference_mode()
 def main():
@@ -47,14 +48,14 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
 
 # Start logic
-    output_path = Path(args.output)
+    output_path = Path(args.output) / args.lp
 
     if not os.path.exists(output_path):
         print("Loading dataset...")
         start = time.perf_counter()
 
         if args.dataset.endswith(".tsv"):
-            print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local datasets.")
+            print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local .tsv datasets.")
             dataset = load_tsv(args.dataset)
             ground_truth = dataset["score"]
             dataset = list(dataset.T.to_dict().values())
@@ -78,7 +79,7 @@ def main():
         model_output = model.predict(dataset, batch_size=args.batch_size, gpus=args.n_gpus)
         prediction_time = time.perf_counter() - start
 
-        os.makedirs(args.output, exist_ok=True)
+        os.makedirs(output_path, exist_ok=True)
         segment_scores = np.array(model_output.scores)
 
         peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
@@ -93,13 +94,14 @@ def main():
             "model_load_time": round(model_load_time, 2),
             "prediction_time": round(prediction_time, 2),
             "dataset_length": len(dataset),
-            
+        }
+        report = report | vars(args)
+        report = report | {
             "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
             "torch.version.cuda": torch.version.cuda,  # type: ignore[code]
             "torch.backends.cudnn.version()": torch.backends.cudnn.version(),  # type: ignore[code]
             "torch.cuda.nccl.version()": torch.cuda.nccl.version(),  # type: ignore[code]
         }    
-        report = report | vars(args) 
 
         np.save(output_path / "model_segment_level_scores.npy", segment_scores)
         dump_json(report, output_path / "report.json")
