@@ -174,3 +174,8 @@ BLEURT*
 *.arrow
 *.ckpt
 *.out
+
+xcomet/results/**/*.*
+xcomet/data
+!xcomet/results/**/report.json
+!xcomet/results/*.csv
