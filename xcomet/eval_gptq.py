@@ -29,13 +29,60 @@ def make_parser():
 
     return parser
 
-
 def load_tsv(path):
     data = pd.read_csv(path, sep="\t")
     data.index = np.arange(len(data))
     data = data.drop(columns=["Unnamed: 0"])
     return data
 
+def get_dataset(args):
+    print("Loading dataset...")
+    start = time.perf_counter()
+
+    if args.dataset.endswith(".tsv"):
+        print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local .tsv datasets.")
+        dataset = load_tsv(args.dataset)
+        ground_truth = dataset["score"]
+        dataset = list(dataset.T.to_dict().values())
+    else:
+        dataset = load_dataset(args.dataset, split="train")
+        dataset = dataset.filter(lambda example: 
+            example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
+        ground_truth = dataset["score"]
+        dataset = [sample for sample in dataset]
+
+    dataset_load_time = time.perf_counter() - start
+    print("N samples:", len(dataset))
+    print("First sample:\n", dataset[0], "\n")
+
+    return dataset, ground_truth, dataset_load_time
+
+def get_model(args):
+    print("Loading model...")
+    start = time.perf_counter()
+    model_path = download_model(args.model)
+    model = load_from_checkpoint(model_path).half()
+    model_load_time = time.perf_counter() - start
+
+    return model, model_load_time
+
+def quantize_model(model, args):
+    print("Quantizing model...")
+    start = time.perf_counter()
+    # By default calibrates on c4 dataset, probably can do better with domain-specific dataset
+    quantizer = GPTQQuantizer(bits=args.nbits, dataset=args.calibration_dataset, block_name_to_quantize = "encoder.layer", model_seqlen = 512)
+    model.encoder.model = quantizer.quantize_model(model.encoder.model, model.encoder.tokenizer)
+    quantization_time = time.perf_counter() - start
+
+    return model, quantization_time
+
+def run_metric(model, dataset, args):
+    print("Computing metric...")
+    start = time.perf_counter()
+    model_output = model.predict(dataset, batch_size=args.batch_size, gpus=args.n_gpus)
+    prediction_time = time.perf_counter() - start
+
+    return model_output, prediction_time
 
 @torch.inference_mode()
 def main():
@@ -54,44 +101,18 @@ def main():
     output_path = Path(args.output) / args.lp
 
     if not os.path.exists(output_path):
-        print("Loading dataset...")
-        start = time.perf_counter()
-
-        if args.dataset.endswith(".tsv"):
-            print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local .tsv datasets.")
-            dataset = load_tsv(args.dataset)
-            ground_truth = dataset["score"]
-            dataset = list(dataset.T.to_dict().values())
-        else:
-            dataset = load_dataset(args.dataset, split="train")
-            dataset = dataset.filter(lambda example: 
-                example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
-            ground_truth = dataset["score"]
-            dataset = [sample for sample in dataset]
-
-        dataset_load_time = time.perf_counter() - start
-        print("N samples:", len(dataset))
-        print("First sample:\n", dataset[0], "\n")
-
-        start = time.perf_counter()
-        model_path = download_model(args.model)
-        model = load_from_checkpoint(model_path).half()
-        model_load_time = time.perf_counter() - start
-
-        start = time.perf_counter()
-        # Calibrates on c4 dataset, probably can do better with domain-specific dataset
-        quantizer = GPTQQuantizer(bits=args.nbits, dataset=args.calibration_dataset, block_name_to_quantize = "encoder.layer", model_seqlen = 512)
-        model.encoder.model = quantizer.quantize_model(model.encoder.model, model.encoder.tokenizer)
-        quantization_time = time.perf_counter() - start
-
-        print("Computing metric...")
-        start = time.perf_counter()
-        model_output = model.predict(dataset, batch_size=args.batch_size, gpus=args.n_gpus)
-        prediction_time = time.perf_counter() - start
-
         os.makedirs(output_path, exist_ok=True)
-        segment_scores = np.array(model_output.scores)
 
+        dataset, ground_truth, dataset_load_time = get_dataset(args)
+
+        model, model_load_time = get_model(args)
+
+        model, quantization_time = quantize_model(model, args)
+
+        model_output, prediction_time = run_metric(model, dataset, args)
+
+        segment_scores = np.array(model_output.scores)
+# Construct report
         peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
         kendall_corr = kendalltau(ground_truth, segment_scores)
 
@@ -114,6 +135,7 @@ def main():
             "torch.cuda.nccl.version()": torch.cuda.nccl.version(),  # type: ignore[code]
         }    
 
+# Save artefacts
         np.save(output_path / "model_segment_level_scores.npy", segment_scores)
         dump_json(report, output_path / "report.json")
         dump_json(model_output.metadata.error_spans, output_path / "error_spans.json")
