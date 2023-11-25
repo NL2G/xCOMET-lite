@@ -177,5 +177,7 @@ BLEURT*
 
 xcomet/results/**/*.*
 xcomet/data
+xcomet/scripts
+xcomet/logs
 !xcomet/results/**/report.json
 !xcomet/results/*.csv
