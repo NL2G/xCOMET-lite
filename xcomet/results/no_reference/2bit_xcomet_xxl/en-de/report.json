@@ -1,0 +1,30 @@
+{
+  "kendall_correlation": 0.38934289340036426,
+  "kendall_p_value": 3.88868381592702e-102,
+  "peak_memory_mb": 7301,
+  "system_level_score": 0.812602187813374,
+  "dataset_load_time": 0.09,
+  "model_load_time": 241.67,
+  "quantization_time": 2670.39,
+  "prediction_time": 109.99,
+  "dataset_length": 1425,
+  "output": "results/no_reference/2bit_xcomet_xxl",
+  "model": "Unbabel/XCOMET-XXL",
+  "lp": "en-de",
+  "dataset": "data/mt_en-de_ground_truth_cleaned_l.tsv",
+  "domain": "news",
+  "year": 2022,
+  "seed": 0,
+  "n_gpus": 1,
+  "batch_size": 8,
+  "nbits": 2,
+  "calibration_dataset": "c4",
+  "CUDA_VISIBLE_DEVICES": "5",
+  "torch.version.cuda": "11.8",
+  "torch.backends.cudnn.version()": 8700,
+  "torch.cuda.nccl.version()": [
+    2,
+    18,
+    6
+  ]
+}
