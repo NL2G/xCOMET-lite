@@ -3,8 +3,8 @@ import pandas as pd
 from utils import load_json
 
 def main():
-    prefix = "with_reference"
-    experiment_names = ["vanilla", "8bit", "4bit"]
+    prefix = "no_reference"
+    experiment_names = ["vanilla", "8bit", "4bit", "3bit", "2bit"]
     models = ["xcomet_xl", "xcomet_xxl"]
     
     results_dir_name = "results"
