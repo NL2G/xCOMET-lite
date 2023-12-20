@@ -1,17 +1,19 @@
 import torch
+import pandas as pd
+
+from typing import Callable
 from torch.utils.data import Dataset
 
 class MQMDataset(Dataset):
-    def __init__(self, ):
-        pass
+    def __init__(self, path: str):
+        self.path = path
+        self.data = pd.read_csv(path)
     
+    def filter(self, predicate: Callable):
+        self.data = self.data[data.apply(predicate, axis=1)]
+
     def __getitem__(self, index):
-        ...
-        return tokenized_sequence, per_token_tags, mqm_score
+        return self.data.iloc[index].to_dict()
     
     def __len__(self):
-        pass
-
-
-def collate_fn(batch):
-    pass
+        return len(self.data)

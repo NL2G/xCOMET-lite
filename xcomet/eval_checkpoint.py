@@ -13,72 +13,57 @@ import lightning as L
 from datasets import load_dataset
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json
-from source.mqm_dataset import MQMDataset
-
-###
-# Implemetation scheme:
-# - Data parser from tsv to something json-like
-# - Hand-written dataset 
-# - Model
-# - CustomTrainer with compute_loss and compute_metrics
-
-# Changes
-# - Data parser -> use published parsed dataset
-# - CustomTrainer -> hand-written train loop
-###
+from utils import load_json, dump_json, load_tsv
 
 def make_parser():
     parser = ArgumentParser(description="MQM finetuning.")
     parser.add_argument("-o", "--output", help="Where to save results, in format root_results_directory/experiment_name", required=True)
+    parser.add_argument("-c", "--checkpoint-path", help="Which checkpoint to evaluate", required=True)
+    parser.add_argument("--lp", help="On which language pair to compute metrics", required=True)
+    parser.add_argument("--dataset", help="Which dataset to use (huggingface dataset/path to tsv file)", required=True)
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
     parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
     parser.add_argument("--batch-size", type=int, default=8, help="Inference batch size")
-    parser.add_argument("--use-wandb", type=bool, default=False, action="store_true", help="Whether to use wandb logging")
 
     parser.add_argument("--encoder-model", default="MiniLM", help="Backbone family [BERT, XLM-RoBERTa, MiniLM, XLM-RoBERTa-XL, RemBERT]")
     parser.add_argument("--pretrained-model", default="microsoft/Multilingual-MiniLM-L12-H384", help="Concrete pretrained checkpoint for the backbone (huggingface name)")
     parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
-    parser.add_argument("--word-layer", type=int, help="From which layer of encoder to predict word tags", required=True)
+    parser.add_argument("--word-layer", type=int, help="From which layer of encoder to predict word tags")
 
     return parser
 
 def print_summary(report: dict):
     print("Dataset load time:", report["dataset_load_time"])
     print("Model load time:", report["model_load_time"])
-    print("Train time:", report["train_time"], "\n")
+    print("Prediction time:", report["prediction_time"], "\n")
     print("Max memory:", report["peak_memory_mb"], "Mb")
-    print("Train kendall correlation:", report["train_kendall_correlation"])
-    print("Validation kendall correlation:", report["val_kendall_correlation"])
+    print("Kendall correlation:", report["kendall_correlation"])
 
 
 # Option A: hardcode error-span dataset, hardcode splits into train/val/test
 # Option B: Make distinct functions and argument sets for train, val and test
 
-def get_datasets(args, track_time):
+def get_dataset(args):
+    print("Loading dataset...")
     start = time.perf_counter()
 
-    path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
-    test_path = "data/wmt-mqm-human-evaluation.csv"
-
-    val_predicate = lambda x: x["domain"] == "social" and x["year"] == "2022.0"
-    train_predicate = lambda x: not val_predicate(x)
-
-    train_dataset = MQMDataset(path)
-    train_dataset.filter(train_predicate)
-
-    val_dataset = MQMDataset(path)
-    val_dataset.filter(val_predicate)
-    
-    # For debugging purposes
-    train_dataset.data = train_dataset.data.iloc[:100]
-    val_dataset.data = val_dataset.data.iloc[:100]
+    if args.dataset.endswith(".tsv"):
+        print(f"Ignoring arguments domain={args.domain}, year={args.year} and lp={args.lp} -- not implemented for local .tsv datasets.")
+        dataset = load_tsv(args.dataset)
+        ground_truth = dataset["score"]
+        dataset = list(dataset.T.to_dict().values())
+    else:
+        dataset = load_dataset(args.dataset, split="train")
+        dataset = dataset.filter(lambda example: 
+            example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp)
+        ground_truth = dataset["score"]
+        dataset = [sample for sample in dataset]
 
     dataset_load_time = time.perf_counter() - start
+    print("N samples:", len(dataset))
+    print("First sample:\n", dataset[0], "\n")
 
-    if track_time:
-        return train_dataset, val_dataset, dataset_load_time
-    return train_dataset, val_dataset
+    return dataset, ground_truth, dataset_load_time
 
 def get_model(args, track_time):
     start = time.perf_counter()
@@ -87,59 +72,23 @@ def get_model(args, track_time):
         pretrained_model=args.pretrained_model,
         word_level_training=args.word_level,
         word_layer=args.word_layer,
-        validation_data=[]
+        validation_data=[],
+        load_pretrained_weights=False,
     )
+    model.load_state_dict(torch.load(args.checkpoint_path))
     model_load_time = time.perf_counter() - start
 
     if track_time:
         return model, model_load_time
     return model
 
-def train_one_epoch(model, optimizer, train_dataloader, use_wandb):
-    losses = []
-
-    for batch in train_dataloader:
-        optimizer.zero_grad()
-
-        inputs, target = model.prepare_sample(batch)
-        
-        output = model(inputs)
-        # output is a dict {"sentemb": Tensor, "wordemb": Tensor, "all_layers": Tensor, "attention_mask": Tensor}
-        loss = model.compute_loss(output, target)
-        
-        loss.backward()
-        optimizer.step()
-
-        losses.append(loss.item())
-        if use_wandb:
-            wandb.log({
-                "loss": loss.item(),
-            })
-        
-    return losses
-
 @torch.inference_mode()
-def evaluate_model(model, val_dataloader, prefix):
-    true_scores = []
-    model_scores = []
+def run_metric(model, dataset, args):
+    start = time.perf_counter()
+    model_output = model.predict(dataset, batch_size=args.batch_size, gpus=args.n_gpus)
+    prediction_time = time.perf_counter() - start
 
-    for batch in val_dataloader:
-        inputs, target = model.prepare_sample(batch)
-        output = model(inputs)
-
-        true_scores.append(target.score.detach().cpu())
-        model_scores.append(output.score.detach().cpu())
-    
-    true_scores = torch.cat(true_scores).numpy()
-    model_scores = torch.cat(model_scores).numpy()
-
-    kendall_result = kendalltau(true_scores, model_scores)
-    return {
-        f"{prefix}kendall_correlation": kendall_result[0],
-        f"{prefix}mse": np.mean(np.square(model_scores - true_scores)),
-        f"{prefix}mae": np.mean(np.abs(model_scores - true_scores)),
-        f"{prefix}kendall_p_value": kendall_result[1],
-    }
+    return model_output, prediction_time
 
 def main():
 # Get arguments
@@ -154,10 +103,14 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
 
 # Check for earlier launches
-    output_path = Path(args.output) / "training"
+    output_path = Path(args.output) / args.lp
 
     if os.path.exists(output_path):
         print("Reusing previous results. Change output folder or delete this folder to recompute.")
+        segment_scores = np.load(output_path / "model_segment_level_scores.npy")
+        error_spans = load_json(output_path / "error_spans.json")
+        report = load_json(output_path / "report.json")
+        print_summary(report)
         return
 
 # Start logic
@@ -187,49 +140,43 @@ def main():
         wandb.login()
         wandb.init(project=args.wandb_project_name, config=vars(args))
 
-    val_metrics = []
-    train_metrics = []
-    losses = []
-
-    train_start = time.perf_counter()
-
     for epoch in range(args.n_epochs):
-        losses.extend(train_one_epoch(model, optimizer, train_dataloader, args.use_wandb))
-        torch.save(model.state_dict(), output_path / "checkpoint.pth")
-        np.save(output_path / "losses.npy", losses)
-
-        train_metrics.append(evaluate_model(model, train_dataloader, "train_"))
-        pd.DataFrame({"epoch": epoch + 1} | train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
-
-        val_metrics.append(evaluate_model(model, val_dataloader, "val_"))
-        pd.DataFrame({"epoch": epoch + 1} | val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
+        losses = train_one_epoch(model, optimizer, train_dataloader, args.use_wandb)
+        metrics = evaluate_model(model, val_dataloader)
 
         if args.use_wandb:
-            wandb.log(train_metrics[-1] | val_metrics[-1])
+            wandb.log(metrics)
 
-    train_time = time.perf_counter() - train_start
 # Construct report
+    print("Computing metric...")
+    model_output = run_metric(model, test_dataset)
+    segment_scores = np.array(model_output.scores)
+
     peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
+    kendall_corr = kendalltau(ground_truth, segment_scores)
 
     report = {
+        "kendall_correlation": kendall_corr[0],
+        "kendall_p_value": kendall_corr[1], 
         "peak_memory_mb": peak_memory_mb,
+        "system_level_score": model_output.system_score,
         "dataset_load_time": round(dataset_load_time, 2),
         "model_load_time": round(model_load_time, 2),
-        "train_time": round(train_time, 2),
-        "train_dataset_length": len(train_dataset),
-        "val_dataset_length": len(val_dataset),
+        "prediction_time": round(prediction_time, 2),
+        "dataset_length": len(dataset),
     }
-    report = report | train_metrics[-1]
-    report = report | val_metrics[-1]
     report = report | vars(args)
     report = report | {
         "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
         "torch.version.cuda": torch.version.cuda,  # type: ignore[code]
         "torch.backends.cudnn.version()": torch.backends.cudnn.version(),  # type: ignore[code]
         "torch.cuda.nccl.version()": torch.cuda.nccl.version(),  # type: ignore[code]
-    }
+    }    
 
+# Save artefacts
+    np.save(output_path / "model_segment_level_scores.npy", segment_scores)
     dump_json(report, output_path / "report.json")
+    dump_json(model_output.metadata.error_spans, output_path / "error_spans.json")
 
 # Finish
     print_summary(report)
