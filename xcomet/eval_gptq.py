@@ -5,13 +5,12 @@ from argparse import ArgumentParser
 
 import torch
 import numpy as np
-import pandas as pd
 from datasets import load_dataset
 from scipy.stats import kendalltau
 from comet import download_model, load_from_checkpoint
 from optimum.gptq import GPTQQuantizer, load_quantized_model
 
-from utils import load_json, dump_json
+from utils import load_json, dump_json, load_tsv
 
 def make_parser():
     parser = ArgumentParser(description="xCOMET evaluation.")
@@ -28,12 +27,6 @@ def make_parser():
     parser.add_argument("--calibration-dataset", default="c4", help="Calibration dataset for GPTQ algorithm")
 
     return parser
-
-def load_tsv(path):
-    data = pd.read_csv(path, sep="\t")
-    data.index = np.arange(len(data))
-    data = data.drop(columns=["Unnamed: 0"])
-    return data
 
 def get_dataset(args):
     print("Loading dataset...")
