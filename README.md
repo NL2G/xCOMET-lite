@@ -19,6 +19,12 @@ pip install --upgrade git+https://github.com/huggingface/transformers.git
 pip install --upgrade pip
 pip install "unbabel-comet>=2.2.0"
 huggingface-cli login               # will have to enter your huggingface access token
+
+# To train distilled models
+pip install lightning==2.1.2
+
+# Visualization
+pip install jupyterlab==4.0.9
 ```
 
 note: it gives 
