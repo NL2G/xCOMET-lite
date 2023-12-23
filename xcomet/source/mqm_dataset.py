@@ -10,7 +10,7 @@ class MQMDataset(Dataset):
         self.data = pd.read_csv(path)
     
     def filter(self, predicate: Callable):
-        self.data = self.data[data.apply(predicate, axis=1)]
+        self.data = self.data[self.data.apply(predicate, axis=1)]
 
     def __getitem__(self, index):
         return self.data.iloc[index].to_dict()

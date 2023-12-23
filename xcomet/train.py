@@ -1,8 +1,11 @@
 import os
 import time
 from pathlib import Path
+from tqdm.auto import tqdm
 from argparse import ArgumentParser
+from collections import defaultdict
 
+import wandb
 import numpy as np
 import pandas as pd
 from scipy.stats import kendalltau
@@ -33,8 +36,10 @@ def make_parser():
     parser.add_argument("-o", "--output", help="Where to save results, in format root_results_directory/experiment_name", required=True)
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
     parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
-    parser.add_argument("--batch-size", type=int, default=8, help="Inference batch size")
-    parser.add_argument("--use-wandb", type=bool, default=False, action="store_true", help="Whether to use wandb logging")
+    parser.add_argument("--batch-size", type=int, default=64, help="Inference batch size")
+    parser.add_argument("--n-epochs", type=int, default=10, help="Number of passes through the train set")
+    parser.add_argument("--use-wandb", action="store_true", help="Whether to use wandb logging")
+    parser.add_argument("--wandb-project-name", type=str, default="xcomet-compression", help="The name of project in wandb")
 
     parser.add_argument("--encoder-model", default="MiniLM", help="Backbone family [BERT, XLM-RoBERTa, MiniLM, XLM-RoBERTa-XL, RemBERT]")
     parser.add_argument("--pretrained-model", default="microsoft/Multilingual-MiniLM-L12-H384", help="Concrete pretrained checkpoint for the backbone (huggingface name)")
@@ -48,8 +53,8 @@ def print_summary(report: dict):
     print("Model load time:", report["model_load_time"])
     print("Train time:", report["train_time"], "\n")
     print("Max memory:", report["peak_memory_mb"], "Mb")
-    print("Train kendall correlation:", report["train_kendall_correlation"])
-    print("Validation kendall correlation:", report["val_kendall_correlation"])
+    print("Train full kendall correlation:", report["train_full_kendall_correlation"])
+    print("Validation full kendall correlation:", report["val_full_kendall_correlation"])
 
 
 # Option A: hardcode error-span dataset, hardcode splits into train/val/test
@@ -71,8 +76,8 @@ def get_datasets(args, track_time):
     val_dataset.filter(val_predicate)
     
     # For debugging purposes
-    train_dataset.data = train_dataset.data.iloc[:100]
-    val_dataset.data = val_dataset.data.iloc[:100]
+    #train_dataset.data = train_dataset.data.sample(n=1000, random_state=11)
+    #val_dataset.data = val_dataset.data.sample(n=1000, random_state=11)
 
     dataset_load_time = time.perf_counter() - start
 
@@ -95,18 +100,28 @@ def get_model(args, track_time):
         return model, model_load_time
     return model
 
-def train_one_epoch(model, optimizer, train_dataloader, use_wandb):
+def train_one_epoch(model, optimizer, train_dataloader, use_wandb, device):
+    model.train()
     losses = []
 
-    for batch in train_dataloader:
+    for batch in tqdm(train_dataloader, desc="training"):
         optimizer.zero_grad()
 
-        inputs, target = model.prepare_sample(batch)
+        inputs_tuple, target = model.prepare_sample(batch)
+        target.score = target.score.to(device)
+
+        loss = 0
         
-        output = model(inputs)
-        # output is a dict {"sentemb": Tensor, "wordemb": Tensor, "all_layers": Tensor, "attention_mask": Tensor}
-        loss = model.compute_loss(output, target)
-        
+        # src + ref, src only, ref only
+        for inputs in inputs_tuple:
+            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+            output = model(**inputs)
+
+            seq_len = target.mt_length.max()
+            output.logits = output.logits[:, :seq_len]
+
+            loss = loss + model.compute_loss(output, target)
+
         loss.backward()
         optimizer.step()
 
@@ -119,27 +134,52 @@ def train_one_epoch(model, optimizer, train_dataloader, use_wandb):
     return losses
 
 @torch.inference_mode()
-def evaluate_model(model, val_dataloader, prefix):
+def evaluate_model(model, val_dataloader, prefix, device):
+    model.eval()
+    input_types = ("src", "ref", "full")
+
     true_scores = []
-    model_scores = []
+    n_samples = 0
+    model_scores = defaultdict(list)
+    tag_accuracy = defaultdict(float)
 
-    for batch in val_dataloader:
-        inputs, target = model.prepare_sample(batch)
-        output = model(inputs)
+    for batch in tqdm(val_dataloader, desc="evaluation"):
+        inputs_tuple, target = model.prepare_sample(batch)
+        assert len(inputs_tuple) == 3, "Only support training mode with (src, ref, full_input) as input"
 
-        true_scores.append(target.score.detach().cpu())
-        model_scores.append(output.score.detach().cpu())
-    
+        true_scores.append(target.score)
+        n_samples += target.score.shape[0]
+        
+        target.score = target.score.to(device)
+        target.labels = target.labels.to(device)
+
+        # src + ref, src only, ref only
+        for inputs, input_type in zip(inputs_tuple, input_types):
+            inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+            output = model(**inputs)
+
+            seq_len = target.mt_length.max()
+            output.logits = output.logits[:, :seq_len]
+
+            model_scores[input_type].append(output.score.detach().cpu())
+            tag_accuracy[input_type] += (output.logits.argmax(-1) == target.labels).float().mean() * target.score.shape[0]
+
     true_scores = torch.cat(true_scores).numpy()
-    model_scores = torch.cat(model_scores).numpy()
-
-    kendall_result = kendalltau(true_scores, model_scores)
-    return {
-        f"{prefix}kendall_correlation": kendall_result[0],
-        f"{prefix}mse": np.mean(np.square(model_scores - true_scores)),
-        f"{prefix}mae": np.mean(np.abs(model_scores - true_scores)),
-        f"{prefix}kendall_p_value": kendall_result[1],
+    model_scores = {k: torch.cat(v).numpy() for k, v in model_scores.items()}
+    kendall_results = {
+        k: kendalltau(true_scores, model_scores[k]) for k in input_types
     }
+    tag_accuracy = {k: v / n_samples for k, v in tag_accuracy.items()}
+
+    metrics = {
+        f"{prefix}{k}_kendall_correlation": kendall_results[k][0] for k in input_types
+    }
+
+    metrics = metrics | {
+        f"{prefix}{k}_tag_accuracy": tag_accuracy[k].item() for k in input_types
+    }
+
+    return metrics
 
 def main():
 # Get arguments
@@ -167,25 +207,29 @@ def main():
 
 # Data
     print("Loading datasets...")
-    train_dataset, val_dataset, dataset_load_time = get_dataset(args, track_time=True)
+    train_dataset, val_dataset, dataset_load_time = get_datasets(args, track_time=True)
     for d, part in zip((train_dataset, val_dataset), ("train", "val")):
         print(part)
         print("N samples:", len(d))
         print("First sample:\n", d[0], "\n")
 
-    train_dataloader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shiffle=True)
-    val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shiffle=False)
+    train_dataloader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=lambda x: x)
+    val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, collate_fn=lambda x: x)
 
 # Model
     # note: apparently, it has some elaborate pooling and learning rate distribution
+    device = "cuda:0"
     model, model_load_time = get_model(args, track_time=True)
+    model.to(device)
 
 # Train loop
-    optimizer = torch.AdamW(model.layerwise_lr(args.lr, args.lr_decay))
+    optimizers, schedulers = model.configure_optimizers()
+    assert len(schedulers) == 0, len(optimizers) == 1
+    optimizer = optimizers[0]
 
     if args.use_wandb:
         wandb.login()
-        wandb.init(project=args.wandb_project_name, config=vars(args))
+        wandb.init(project=args.wandb_project_name, config=vars(args), name=args.output.split("/")[-1])
 
     val_metrics = []
     train_metrics = []
@@ -194,15 +238,15 @@ def main():
     train_start = time.perf_counter()
 
     for epoch in range(args.n_epochs):
-        losses.extend(train_one_epoch(model, optimizer, train_dataloader, args.use_wandb))
+        losses.extend(train_one_epoch(model, optimizer, train_dataloader, args.use_wandb, device))
         torch.save(model.state_dict(), output_path / "checkpoint.pth")
         np.save(output_path / "losses.npy", losses)
 
-        train_metrics.append(evaluate_model(model, train_dataloader, "train_"))
-        pd.DataFrame({"epoch": epoch + 1} | train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
+        train_metrics.append(evaluate_model(model, train_dataloader, "train_", device))
+        pd.DataFrame(train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
 
-        val_metrics.append(evaluate_model(model, val_dataloader, "val_"))
-        pd.DataFrame({"epoch": epoch + 1} | val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
+        val_metrics.append(evaluate_model(model, val_dataloader, "val_", device))
+        pd.DataFrame(val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
 
         if args.use_wandb:
             wandb.log(train_metrics[-1] | val_metrics[-1])
