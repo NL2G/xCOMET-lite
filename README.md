@@ -21,7 +21,7 @@ pip install "unbabel-comet>=2.2.0"
 huggingface-cli login               # will have to enter your huggingface access token
 
 # To train distilled models
-pip install lightning==2.1.2
+pip install lightning==2.1.2 wandb
 
 # Visualization
 pip install jupyterlab==4.0.9
