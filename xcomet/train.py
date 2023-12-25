@@ -36,15 +36,22 @@ def make_parser():
     parser.add_argument("-o", "--output", help="Where to save results, in format root_results_directory/experiment_name", required=True)
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
     parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
-    parser.add_argument("--batch-size", type=int, default=64, help="Inference batch size")
+    parser.add_argument("--batch-size", type=int, default=8, help="Training batch size (equals effective batch size when grad-accum-steps=1)")
+    parser.add_argument("--grad-accum-steps", type=int, default=2, help="Number of batches processed before weights update")
     parser.add_argument("--n-epochs", type=int, default=10, help="Number of passes through the train set")
     parser.add_argument("--use-wandb", action="store_true", help="Whether to use wandb logging")
     parser.add_argument("--wandb-project-name", type=str, default="xcomet-compression", help="The name of project in wandb")
 
+    parser.add_argument("--nr-frozen-epochs", type=float, default=0.9, help="Number of epochs (% of epoch) that the encoder is frozen")
+    parser.add_argument("--encoder-lr", type=float, default=1e-06, help="Base learning rate for the encoder part")
+    parser.add_argument("--lr", type=float, default=3.66e-06, help="Learning rate for top layers")
+    parser.add_argument("--layerwise-decay", type=float, default=0.983, help="Learning rate decay from last to first encoder layers")
     parser.add_argument("--encoder-model", default="MiniLM", help="Backbone family [BERT, XLM-RoBERTa, MiniLM, XLM-RoBERTa-XL, RemBERT]")
     parser.add_argument("--pretrained-model", default="microsoft/Multilingual-MiniLM-L12-H384", help="Concrete pretrained checkpoint for the backbone (huggingface name)")
+    parser.add_argument("--word-layer", type=int, default=8, help="From which layer of encoder to predict word tags")
     parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
-    parser.add_argument("--word-layer", type=int, help="From which layer of encoder to predict word tags", required=True)
+    parser.add_argument("--hidden-sizes", nargs="+", type=int, default=(3072, 1024), help="Size of hidden layers used in regression head")
+    parser.add_argument("--loss-lambda", type=float, default=0.055, help="Weight assigned to the word-level loss")
 
     return parser
 
@@ -88,11 +95,16 @@ def get_datasets(args, track_time):
 def get_model(args, track_time):
     start = time.perf_counter()
     model = XCOMETMetric(
+        encoder_learning_rate=args.encoder_lr,
+        learning_rate=args.lr,
+        layerwise_decay=args.layerwise_decay,
         encoder_model=args.encoder_model,
         pretrained_model=args.pretrained_model,
-        word_level_training=args.word_level,
         word_layer=args.word_layer,
-        validation_data=[]
+        validation_data=[],
+        word_level_training=args.word_level,
+        hidden_sizes=args.hidden_sizes,
+        loss_lambda=args.loss_lambda,
     )
     model_load_time = time.perf_counter() - start
 
@@ -100,14 +112,13 @@ def get_model(args, track_time):
         return model, model_load_time
     return model
 
-def train_one_epoch(model, optimizer, train_dataloader, use_wandb, device):
+def train_one_epoch(model, optimizer, scheduler, train_dataloader, use_wandb, grad_accum_steps, device):
     model.train()
     losses = []
 
-    for batch in tqdm(train_dataloader, desc="training"):
-        optimizer.zero_grad()
-
+    for step, batch in enumerate(tqdm(train_dataloader, desc="training")):
         inputs_tuple, target = model.prepare_sample(batch)
+        assert len(inputs_tuple) == 3, "Only support mode with (src, ref, full_input) as input for now (important during evaluation)"
         target.score = target.score.to(device)
 
         loss = 0
@@ -117,26 +128,35 @@ def train_one_epoch(model, optimizer, train_dataloader, use_wandb, device):
             inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
             output = model(**inputs)
 
+            # keep only logits corresponding to "mt" part of input, as we only predict error spans there
             seq_len = target.mt_length.max()
             output.logits = output.logits[:, :seq_len]
 
             loss = loss + model.compute_loss(output, target)
 
-        loss.backward()
-        optimizer.step()
+        # Without this scaling we will have effective lr = lr * grad_accum_steps
+        (loss / grad_accum_steps).backward()
 
-        losses.append(loss.item())
-        if use_wandb:
-            wandb.log({
-                "loss": loss.item(),
-            })
+        if step % grad_accum_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
+            
+            if scheduler is not None:
+                scheduler.step()
+
+            losses.append(loss.item())
+            
+            if use_wandb:
+                wandb.log({
+                    "loss": loss.item(),
+                })
         
     return losses
 
 @torch.inference_mode()
 def evaluate_model(model, val_dataloader, prefix, device):
-    model.eval()
     input_types = ("src", "ref", "full")
+    model.eval()
 
     true_scores = []
     n_samples = 0
@@ -145,7 +165,7 @@ def evaluate_model(model, val_dataloader, prefix, device):
 
     for batch in tqdm(val_dataloader, desc="evaluation"):
         inputs_tuple, target = model.prepare_sample(batch)
-        assert len(inputs_tuple) == 3, "Only support training mode with (src, ref, full_input) as input"
+        assert len(inputs_tuple) == 3, "Only support mode with (src, ref, full_input) as input for now"
 
         true_scores.append(target.score)
         n_samples += target.score.shape[0]
@@ -153,11 +173,12 @@ def evaluate_model(model, val_dataloader, prefix, device):
         target.score = target.score.to(device)
         target.labels = target.labels.to(device)
 
-        # src + ref, src only, ref only
+        # 3 input types: src only, ref only, full (src + ref)
         for inputs, input_type in zip(inputs_tuple, input_types):
             inputs = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
             output = model(**inputs)
 
+            # keep only logits corresponding to "mt" part of input, as we only predict error spans there
             seq_len = target.mt_length.max()
             output.logits = output.logits[:, :seq_len]
 
@@ -232,28 +253,34 @@ def main():
         wandb.init(project=args.wandb_project_name, config=vars(args), name=args.output.split("/")[-1])
 
     val_metrics = []
-    train_metrics = []
     losses = []
 
     train_start = time.perf_counter()
 
     for epoch in range(args.n_epochs):
-        losses.extend(train_one_epoch(model, optimizer, train_dataloader, args.use_wandb, device))
+        if epoch >= args.n_epochs * args.nr_frozen_epochs:
+            print("Unfreezing encoder (but keeping embeddings frozen).")
+            model.encoder.unfreeze()
+            model.encoder.freeze_embeddings()
+
+        losses.extend(train_one_epoch(model, optimizer, None, train_dataloader, args.use_wandb, args.grad_accum_steps, device))
         torch.save(model.state_dict(), output_path / "checkpoint.pth")
         np.save(output_path / "losses.npy", losses)
-
-        train_metrics.append(evaluate_model(model, train_dataloader, "train_", device))
-        pd.DataFrame(train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
 
         val_metrics.append(evaluate_model(model, val_dataloader, "val_", device))
         pd.DataFrame(val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
 
         if args.use_wandb:
-            wandb.log(train_metrics[-1] | val_metrics[-1])
+            #wandb.log(train_metrics[-1] | val_metrics[-1])
+            wandb.log(val_metrics[-1])
 
     train_time = time.perf_counter() - train_start
 # Construct report
     peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
+
+    train_metrics = []
+    train_metrics.append(evaluate_model(model, train_dataloader, "train_", device))
+    pd.DataFrame(train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
 
     report = {
         "peak_memory_mb": peak_memory_mb,

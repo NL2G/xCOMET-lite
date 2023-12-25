@@ -128,7 +128,7 @@ def main():
             "torch.cuda.nccl.version()": torch.cuda.nccl.version(),  # type: ignore[code]
         }    
 
-# Save artefacts
+# Save artifacts
         np.save(output_path / "model_segment_level_scores.npy", segment_scores)
         dump_json(report, output_path / "report.json")
         dump_json(model_output.metadata.error_spans, output_path / "error_spans.json")
