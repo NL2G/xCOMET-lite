@@ -1,0 +1,10 @@
+experiment_name,lp,kendall_correlation,peak_memory_mb,system_level_score,prediction_time,model_load_time,domain,year,setup
+default,en-de,0.3265972326729255,603,0.9361970884005228,21.51,3.08,news,2022,with_reference
+default,en-ru,0.3376024987933661,601,0.907284202893575,20.99,2.98,news,2022,with_reference
+default,zh-en,0.32463374621710683,767,0.8307120190752615,40.87,3.03,news,2022,with_reference
+more_word_level_loss,en-de,0.3200056215781439,603,0.9418460536532932,21.48,3.02,news,2022,with_reference
+more_word_level_loss,en-ru,0.3482544610542156,601,0.9221757117509842,21.22,3.28,news,2022,with_reference
+more_word_level_loss,zh-en,0.3155825566098301,767,0.8484125718857982,40.34,3.22,news,2022,with_reference
+unfrozen_encoder,en-de,0.3241915090880229,603,0.953500304725435,21.08,3.16,news,2022,with_reference
+unfrozen_encoder,en-ru,0.327768599452454,601,0.9393631018267737,21.5,2.96,news,2022,with_reference
+unfrozen_encoder,zh-en,0.2884392779484981,767,0.8667170817466459,40.53,3.1,news,2022,with_reference

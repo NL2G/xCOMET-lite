@@ -175,9 +175,9 @@ BLEURT*
 *.ckpt
 *.out
 
-xcomet/results/**/*.*
+xcomet/*_results/**/*.*
 xcomet/data
 xcomet/scripts
 xcomet/logs
-!xcomet/results/**/report.json
-!xcomet/results/*.csv
+!xcomet/*_results/**/report.json
+!xcomet/*_results/*.csv
