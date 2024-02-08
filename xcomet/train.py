@@ -61,7 +61,7 @@ def print_summary(report: dict):
     print("Train time:", report["train_time"], "\n")
     print("Max memory:", report["peak_memory_mb"], "Mb")
     print("Train full kendall correlation:", report["train_full_kendall_correlation"])
-    print("Validation full kendall correlation:", report["val_full_kendall_correlation"])
+    # print("Validation full kendall correlation:", report["val_full_kendall_correlation"])
 
 
 # Option A: hardcode error-span dataset, hardcode splits into train/val/test
@@ -73,17 +73,18 @@ def get_datasets(args, track_time):
     path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
     test_path = "data/wmt-mqm-human-evaluation.csv"
 
-    val_predicate = lambda x: x["domain"] == "social" and x["year"] == "2022.0"
-    train_predicate = lambda x: not val_predicate(x)
+    # val_predicate = lambda x: x["domain"] == "social" and x["year"] == "2022.0"
+    # train_predicate = lambda x: not val_predicate(x)
 
     train_dataset = MQMDataset(path)
-    train_dataset.filter(train_predicate)
+    # train_dataset.filter(train_predicate)
 
-    val_dataset = MQMDataset(path)
-    val_dataset.filter(val_predicate)
+    val_dataset = None
+    # val_dataset = MQMDataset(path)
+    # val_dataset.filter(val_predicate)
     
     # For debugging purposes
-    #train_dataset.data = train_dataset.data.sample(n=1000, random_state=11)
+    # train_dataset.data = train_dataset.data.sample(n=1000, random_state=11)
     #val_dataset.data = val_dataset.data.sample(n=1000, random_state=11)
 
     dataset_load_time = time.perf_counter() - start
@@ -231,14 +232,13 @@ def main():
     train_dataset, val_dataset, dataset_load_time = get_datasets(args, track_time=True)
     for d, part in zip((train_dataset, val_dataset), ("train", "val")):
         print(part)
-        print("N samples:", len(d))
-        print("First sample:\n", d[0], "\n")
+        print("N samples:", len(d) if d is not None else 0)
+        print("First sample:\n", d[0] if d is not None else None, "\n")
 
     train_dataloader = torch.utils.data.DataLoader(train_dataset, args.batch_size, shuffle=True, collate_fn=lambda x: x)
-    val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, collate_fn=lambda x: x)
+    #val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, collate_fn=lambda x: x)
 
 # Model
-    # note: apparently, it has some elaborate pooling and learning rate distribution
     device = "cuda:0"
     model, model_load_time = get_model(args, track_time=True)
     model.to(device)
@@ -252,7 +252,7 @@ def main():
         wandb.login()
         wandb.init(project=args.wandb_project_name, config=vars(args), name=args.output.split("/")[-1])
 
-    val_metrics = []
+    #val_metrics = []
     losses = []
 
     train_start = time.perf_counter()
@@ -267,12 +267,12 @@ def main():
         torch.save(model.state_dict(), output_path / "checkpoint.pth")
         np.save(output_path / "losses.npy", losses)
 
-        val_metrics.append(evaluate_model(model, val_dataloader, "val_", device))
-        pd.DataFrame(val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
+        # val_metrics.append(evaluate_model(model, val_dataloader, "val_", device))
+        # pd.DataFrame(val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
 
-        if args.use_wandb:
-            #wandb.log(train_metrics[-1] | val_metrics[-1])
-            wandb.log(val_metrics[-1])
+        # if args.use_wandb:
+        #     #wandb.log(train_metrics[-1] | val_metrics[-1])
+        #     wandb.log(val_metrics[-1])
 
     train_time = time.perf_counter() - train_start
 # Construct report
@@ -288,10 +288,10 @@ def main():
         "model_load_time": round(model_load_time, 2),
         "train_time": round(train_time, 2),
         "train_dataset_length": len(train_dataset),
-        "val_dataset_length": len(val_dataset),
+        #"val_dataset_length": len(val_dataset),
     }
     report = report | train_metrics[-1]
-    report = report | val_metrics[-1]
+    #report = report | val_metrics[-1]
     report = report | vars(args)
     report = report | {
         "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
