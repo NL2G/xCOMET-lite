@@ -12,7 +12,6 @@ from scipy.stats import kendalltau
 
 import torch
 import torch.nn as nn
-import lightning as L
 from datasets import load_dataset
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
@@ -31,7 +30,7 @@ from source.mqm_dataset import MQMDataset
 # - CustomTrainer -> hand-written train loop
 ###
 
-def make_parser():
+def parse_args():
     parser = ArgumentParser(description="MQM finetuning.")
     parser.add_argument("-o", "--output", help="Where to save results, in format root_results_directory/experiment_name", required=True)
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
@@ -41,6 +40,8 @@ def make_parser():
     parser.add_argument("--n-epochs", type=int, default=10, help="Number of passes through the train set")
     parser.add_argument("--use-wandb", action="store_true", help="Whether to use wandb logging")
     parser.add_argument("--wandb-project-name", type=str, default="xcomet-compression", help="The name of project in wandb")
+    parser.add_argument("--train-dataset", help="Dataset to train on", required=True)
+    parser.add_argument("--val-dataset", default="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv", help="Dataset for validation")
 
     parser.add_argument("--nr-frozen-epochs", type=float, default=0.9, help="Number of epochs (% of epoch) that the encoder is frozen")
     parser.add_argument("--encoder-lr", type=float, default=1e-06, help="Base learning rate for the encoder part")
@@ -52,10 +53,11 @@ def make_parser():
     parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
     parser.add_argument("--hidden-sizes", nargs="+", type=int, default=(3072, 1024), help="Size of hidden layers used in regression head")
     parser.add_argument("--loss-lambda", type=float, default=0.055, help="Weight assigned to the word-level loss")
-
-    return parser
+    
+    return parser.parse_args()
 
 def print_summary(report: dict):
+    print("=" * 70)
     print("Dataset load time:", report["dataset_load_time"])
     print("Model load time:", report["model_load_time"])
     print("Train time:", report["train_time"], "\n")
@@ -69,21 +71,22 @@ def print_summary(report: dict):
 
 def get_datasets(args, track_time):
     start = time.perf_counter()
-
-    path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
+    
     test_path = "data/wmt-mqm-human-evaluation.csv"
 
-    val_predicate = lambda x: x["domain"] == "social" and x["year"] == "2022.0"
-    train_predicate = lambda x: not val_predicate(x)
-
-    train_dataset = MQMDataset(path)
-    train_dataset.filter(train_predicate)
-
-    val_dataset = MQMDataset(path)
-    val_dataset.filter(val_predicate)
+    train_dataset = load_dataset(args.train_dataset)["train"]
     
+    if args.val_dataset.endswith(".csv"):
+        val_dataset = MQMDataset(args.val_dataset)
+    elif args.val_dataset.endwith(".tsv"):
+        raise ValueError(".tsv is not supported yet")
+    else:
+        # Assumes it is a huggingface dataset
+        val_dataset = load_dataset(args.val_dataset)
+
     # For debugging purposes
     #train_dataset.data = train_dataset.data.sample(n=1000, random_state=11)
+    #train_dataset = train_dataset.select(range(1000))
     #val_dataset.data = val_dataset.data.sample(n=1000, random_state=11)
 
     dataset_load_time = time.perf_counter() - start
@@ -112,12 +115,24 @@ def get_model(args, track_time):
         return model, model_load_time
     return model
 
+def prepare_sample(model, batch):
+    if isinstance(model, torch.nn.DataParallel):
+        return model.module.prepare_sample(batch)
+    
+    return model.prepare_sample(batch)
+
+def compute_loss(model, output, target):
+    if isinstance(model, torch.nn.DataParallel):
+        return model.module.compute_loss(output, target)
+
+    return model.compute_loss(output, target)
+
 def train_one_epoch(model, optimizer, scheduler, train_dataloader, use_wandb, grad_accum_steps, device):
     model.train()
     losses = []
 
     for step, batch in enumerate(tqdm(train_dataloader, desc="training")):
-        inputs_tuple, target = model.prepare_sample(batch)
+        inputs_tuple, target = prepare_sample(model, batch)
         assert len(inputs_tuple) == 3, "Only support mode with (src, ref, full_input) as input for now (important during evaluation)"
         target.score = target.score.to(device)
 
@@ -132,7 +147,7 @@ def train_one_epoch(model, optimizer, scheduler, train_dataloader, use_wandb, gr
             seq_len = target.mt_length.max()
             output.logits = output.logits[:, :seq_len]
 
-            loss = loss + model.compute_loss(output, target)
+            loss = loss + compute_loss(model, output, target)
 
         # Without this scaling we will have effective lr = lr * grad_accum_steps
         (loss / grad_accum_steps).backward()
@@ -164,7 +179,7 @@ def evaluate_model(model, val_dataloader, prefix, device):
     tag_accuracy = defaultdict(float)
 
     for batch in tqdm(val_dataloader, desc="evaluation"):
-        inputs_tuple, target = model.prepare_sample(batch)
+        inputs_tuple, target = prepare_sample(model, batch)
         assert len(inputs_tuple) == 3, "Only support mode with (src, ref, full_input) as input for now"
 
         true_scores.append(target.score)
@@ -204,8 +219,7 @@ def evaluate_model(model, val_dataloader, prefix, device):
 
 def main():
 # Get arguments
-    parser = make_parser()
-    args = parser.parse_args()
+    args = parse_args()
     print(args)
 
 # Setup environment
@@ -241,10 +255,9 @@ def main():
     # note: apparently, it has some elaborate pooling and learning rate distribution
     device = "cuda:0"
     model, model_load_time = get_model(args, track_time=True)
-    model.to(device)
 
 # Train loop
-    optimizers, schedulers = model.configure_optimizers()
+    optimizers, schedulers = model.configure_optimizers() 
     assert len(schedulers) == 0, len(optimizers) == 1
     optimizer = optimizers[0]
 
@@ -255,13 +268,22 @@ def main():
     val_metrics = []
     losses = []
 
+    if args.n_gpus > 1:
+        model = torch.nn.DataParallel(model)
+    
+    model.to(device)
+
     train_start = time.perf_counter()
 
     for epoch in range(args.n_epochs):
         if epoch >= args.n_epochs * args.nr_frozen_epochs:
             print("Unfreezing encoder (but keeping embeddings frozen).")
-            model.encoder.unfreeze()
-            model.encoder.freeze_embeddings()
+            if args.n_gpus == 1:
+                model.encoder.unfreeze()
+                model.encoder.freeze_embeddings()
+            else:
+                model.module.encoder.unfreeze()
+                model.module.encoder.freeze_embeddings()
 
         losses.extend(train_one_epoch(model, optimizer, None, train_dataloader, args.use_wandb, args.grad_accum_steps, device))
         torch.save(model.state_dict(), output_path / "checkpoint.pth")
