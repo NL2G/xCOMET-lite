@@ -4,8 +4,8 @@ from utils import load_json
 
 def main():
     for prefix in ("with_reference", "no_reference"):
-        experiment_names = ["default", "more_word_level_loss", "unfrozen_encoder", 
-            "debug_3_stages", "3_stages", "longer_unfrozen1", "longer_unfrozen2", "longer_unfrozen3",]
+        experiment_names = ["default", "more_word_level_loss", "unfrozen_encoder", "debug_3_stages",
+            "3_stages", "longer_unfrozen1", "longer_unfrozen2", "longer_unfrozen3", "synth"]
         
         results_dir_name = "distillation_results"
         all_language_pairs = ("en-de", "en-ru", "zh-en")
