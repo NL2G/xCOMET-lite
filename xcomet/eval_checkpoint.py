@@ -12,7 +12,6 @@ from scipy.stats import kendalltau
 
 import torch
 import torch.nn as nn
-import lightning as L
 from datasets import load_dataset
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
