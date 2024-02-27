@@ -62,8 +62,6 @@ def print_summary(report: dict):
     print("Model load time:", report["model_load_time"])
     print("Train time:", report["train_time"], "\n")
     print("Max memory:", report["peak_memory_mb"], "Mb")
-    print("Train full kendall correlation:", report["train_full_kendall_correlation"])
-    print("Validation full kendall correlation:", report["val_full_kendall_correlation"])
 
 
 # Option A: hardcode error-span dataset, hardcode splits into train/val/test
@@ -94,10 +92,11 @@ def get_datasets(args, track_time):
     da_dataset = da_dataset.remove_columns("score")
     da_dataset = da_dataset.add_column("score", scaled_scores)
 
-    # For debugging purposes
-    #mqm_dataset.data = mqm_dataset.data.sample(n=1000, random_state=11)
-
     dataset_load_time = time.perf_counter() - start
+
+    # For debugging purposes
+    # mqm_dataset.data = mqm_dataset.data.sample(n=1000, random_state=11)
+    # da_dataset = da_dataset.select(range(1000))
 
     if track_time:
         return mqm_dataset, da_dataset, dataset_load_time
@@ -313,8 +312,8 @@ def main():
         "dataset_load_time": round(dataset_load_time, 2),
         "model_load_time": round(model_load_time, 2),
         "train_time": round(train_time, 2),
-        "train_dataset_length": len(train_dataset),
-        "val_dataset_length": len(val_dataset),
+        "mqm_dataset_length": len(mqm_dataset),
+        "da_dataset_length": len(da_dataset),
     }
     #report = report | train_metrics[-1]
     #report = report | val_metrics[-1]
