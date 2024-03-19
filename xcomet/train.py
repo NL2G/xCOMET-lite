@@ -19,7 +19,7 @@ import comet.encoders
 comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json
+from utils import load_json, dump_json, LengthGroupedSampler
 from source.mqm_dataset import MQMDataset
 
 from rich.logging import RichHandler
@@ -180,9 +180,9 @@ def get_datasets(args, track_time):
 
     train_dataset = load_dataset(args.train_dataset)["train"]
 
-    if args.val_dataset.endswith(".csv"):
+    if ".csv" in args.val_dataset:
         val_dataset = MQMDataset(args.val_dataset)
-    elif args.val_dataset.endwith(".tsv"):
+    elif args.val_dataset.endswith(".tsv"):
         raise ValueError(".tsv is not supported yet")
     else:
         # Assumes it is a huggingface dataset
@@ -257,7 +257,7 @@ def train_one_epoch(
                 for k, v in inputs.items()
             }
             
-            with autocast(device_type='cuda', dtype=torch.bfloat16):
+            with autocast(device_type='cuda', dtype=torch.float16):
                 output = model(**inputs)
 
                 # keep only logits corresponding to "mt" part of input, as we only predict error spans there
@@ -379,8 +379,12 @@ def main():
         logger.info(f"N samples: {len(d) if d is not None else 0}")
         logger.info(f"First sample:\n{d[0] if d is not None else None}\n")
 
+    sampler = LengthGroupedSampler(
+        batch_size=args.batch_size, dataset=train_dataset, model_input_name="src"
+    )
+
     train_dataloader = torch.utils.data.DataLoader(
-        train_dataset, args.batch_size, shuffle=True, collate_fn=lambda x: x
+        dataset=train_dataset, batch_size=args.batch_size, sampler=sampler, shuffle=True, collate_fn=lambda x: x
     )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, collate_fn=lambda x: x)
 
