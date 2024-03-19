@@ -7,7 +7,7 @@
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --partition=single
+#SBATCH --partition=gpu_4,gpu_8,gpu_4_a100,gpu_4_h100
 #SBATCH --array=0-2
 
 # Add your commands here
@@ -27,8 +27,8 @@ python train.py \
     --hidden-sizes 3072 1024 \
     --loss-lambda=0.055 \
     --layerwise-decay=0.983 \
-    --lr=3.66e-06 \
-    --encoder-lr=1e-06 \
+    --lr=1e-05 \
+    --encoder-lr=5e-06 \
     --train-dataset="nllg/mt-metric-synth-plus" \
     --val-dataset="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv.zst" \
     --wandb-project-name="xcomet-distillation" \
