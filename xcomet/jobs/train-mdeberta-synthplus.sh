@@ -30,7 +30,7 @@ python train.py \
     --lr=3.66e-06 \
     --encoder-lr=1e-06 \
     --train-dataset="nllg/mt-metric-synth-plus" \
-    --val-dataset="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv" \
+    --val-dataset="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv.zst" \
     --wandb-project-name="xcomet-distillation" \
     --use-wandb \
     --n-epochs=1 \
