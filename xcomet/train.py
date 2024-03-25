@@ -384,7 +384,7 @@ def main():
     )
 
     train_dataloader = torch.utils.data.DataLoader(
-        dataset=train_dataset, batch_size=args.batch_size, sampler=sampler, shuffle=True, collate_fn=lambda x: x
+        dataset=train_dataset, batch_size=args.batch_size, sampler=sampler, collate_fn=lambda x: x
     )
     val_dataloader = torch.utils.data.DataLoader(val_dataset, args.batch_size, shuffle=False, collate_fn=lambda x: x)
 
@@ -447,10 +447,6 @@ def main():
     # Construct report
     peak_memory_mb = torch.cuda.max_memory_allocated() // 2**20
 
-    train_metrics = []
-    train_metrics.append(evaluate_model(model, train_dataloader, "train_", device))
-    pd.DataFrame(train_metrics).to_csv(output_path / "train_metrics.csv", index=False)
-
     report = {
         "peak_memory_mb": peak_memory_mb,
         "dataset_load_time": round(dataset_load_time, 2),
@@ -459,7 +455,6 @@ def main():
         "train_dataset_length": len(train_dataset),
         # "val_dataset_length": len(val_dataset),
     }
-    report = report | train_metrics[-1]
     report = report | val_metrics[-1]
     report = report | vars(args)
     report = report | {

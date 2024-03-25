@@ -7,7 +7,7 @@
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu_4,gpu_8,gpu_4_a100,gpu_4_h100
+#SBATCH --partition=gpu_4_h100,gpu_4_a100,gpu_4,gpu_8
 #SBATCH --array=0-2
 
 # Add your commands here
@@ -22,13 +22,13 @@ python train.py \
     --output="distillation_results/synthplus-mdeberta-${SLURM_ARRAY_TASK_ID}" \
     --pretrained-model="microsoft/mdeberta-v3-base" \
     --encoder-model="DeBERTa" \
-    --word-layer=8 \
+    --word-layer=12 \
     --word-level=True \
-    --hidden-sizes 3072 1024 \
+    --hidden-sizes 512 128 \
     --loss-lambda=0.055 \
     --layerwise-decay=0.983 \
-    --lr=1e-05 \
-    --encoder-lr=5e-06 \
+    --lr=0.000155296 \
+    --encoder-lr=0.000155296 \
     --train-dataset="nllg/mt-metric-synth-plus" \
     --val-dataset="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv.zst" \
     --wandb-project-name="xcomet-distillation" \

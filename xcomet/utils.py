@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import torch
 from typing import Optional
+import gc
 
 from torch.utils.data import Sampler, Dataset
 
@@ -73,11 +74,22 @@ class LengthGroupedSampler(Sampler):
 
         self.batch_size = batch_size
         model_input_name = model_input_name if model_input_name is not None else "input_ids"
+
+        if dataset is not None:
+            lengths = dataset.map(
+                lambda x: {'len': len(x[model_input_name])},
+                batched=False,
+                num_proc=4,
+            )
             
-        lengths = [len(feature[model_input_name]) for feature in dataset]
+        lengths = lengths['len']
 
         self.lengths = lengths
+        if generator is None:
+            self.generator = torch.Generator()
+            self.generator.manual_seed(0)
         self.generator = generator
+        gc.collect()
 
     def __len__(self):
         return len(self.lengths)
