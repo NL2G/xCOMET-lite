@@ -4,6 +4,10 @@ from pathlib import Path
 from tqdm.auto import tqdm
 from argparse import ArgumentParser
 from collections import defaultdict
+from deberta_encoder import DeBERTaEncoder
+import comet.encoders
+
+comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
 
 import wandb
 import numpy as np
