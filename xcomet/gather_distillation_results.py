@@ -3,15 +3,14 @@ import pandas as pd
 from utils import load_json
 
 def main():
-    for prefix in ("with_reference", "no_reference"):
-        experiment_names = ["default", "more_word_level_loss", "unfrozen_encoder", "debug_3_stages",
-            "3_stages", "longer_unfrozen1", "longer_unfrozen2", "longer_unfrozen3", "synth"]
+    for prefix in ["with_reference"]:
+        experiment_names = ["synth", "synthplus-mdeberta-0", "synthplus-mdeberta-1", "synthplus-mdeberta-2"]
         
         results_dir_name = "distillation_results"
         all_language_pairs = ("en-de", "en-ru", "zh-en")
         other_language_pairs = ("en-de", "en-es", "en-zh")
         
-        output_name = f"{prefix}_summary.csv"
+        output_name = f"synthplus_{prefix}_summary.csv"
 
         paths = [
             f"{results_dir_name}/{experiment_name}/evaluations/{prefix}/{language_pair}/report.json" 
@@ -29,6 +28,7 @@ def main():
             "experiment_name", "lp", "kendall_correlation", "peak_memory_mb", \
             "system_level_score", "prediction_time", "model_load_time", "domain", "year", "setup",
         ]
+        #print(results)
 
         results = results[interesting_columns]
         results.sort_values(by=["experiment_name", "lp"], inplace=True)

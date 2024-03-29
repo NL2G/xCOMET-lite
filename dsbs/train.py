@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
-# srun --pty --partition=gpu_8,gpu_4,gpu_4_a100,gpu_4_h100 --time=1:00:00 --gres=gpu:2 --cpus-per-task=16 --mem=128G accelerate launch train.py -c ./config/debug.yaml 
+# srun --pty --partition=single --time=1:00:00 --gres=gpu:2 --cpus-per-task=16 --mem=128G accelerate launch train.py -c ./config/debug.yaml 
 
 from rich import print
 import datasets as ds
