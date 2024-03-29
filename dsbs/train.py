@@ -15,8 +15,10 @@ import argparse as ap
 from rich.logging import RichHandler
 import logging
 
+IS_RANK_0 = os.environ.get("RANK", "0") == "0"
+
 logging.basicConfig(
-    level="INFO",
+    level="INFO" if IS_RANK_0 else "ERROR",
     format="%(message)s",
     datefmt="[%X]",
     handlers=[RichHandler(rich_tracebacks=True)]
@@ -26,18 +28,18 @@ logger = logging.getLogger(__name__)
 
 logger.info(f"Env vars: {os.environ}")
 
-def main(config_path: str):
+def main(config_path: str, output_name: str = "model"):
     config = OmegaConf.load(config_path)
     
     arguments = tr.Seq2SeqTrainingArguments(
-        output_dir=f"./output/{config.misc.model_name}", 
+        output_dir=f"./output/{output_name}", 
         overwrite_output_dir=True,
         remove_unused_columns=False,
         do_train=True, do_eval=True,
         evaluation_strategy='steps', 
-        eval_steps=100,
+        eval_steps=500,
         logging_strategy='steps', 
-        logging_steps=100,
+        logging_steps=10,
         predict_with_generate=True, 
         prediction_loss_only=False, 
         per_device_train_batch_size=config.batch.train_size, 
@@ -50,10 +52,9 @@ def main(config_path: str):
         lr_scheduler_type=config.train.lr_scheduler, 
         warmup_ratio=config.train.warmup_ratio,
         save_strategy='steps', 
-        save_steps=100, 
+        save_steps=500, 
         save_safetensors=True, 
         group_by_length=True, length_column_name='length',
-        fp16=True, fp16_opt_level='O2'
     )
 
     logging.info(f"Running with arguments: {arguments}")
@@ -94,28 +95,28 @@ def main(config_path: str):
         dataset = dataset.map(
             tokenize_fn, 
             batched=True, 
-            batch_size=128, 
-            num_proc=8,
+            batch_size=1024, 
+            num_proc=20,
             remove_columns=dataset['train'].column_names
         )
         
         dataset = dataset.map(
             mu.length_fn,
             batched=True,
-            batch_size=128,
-            num_proc=8
+            batch_size=1024,
+            num_proc=20
         )
     
     
-    data_collator = mu.DataCollator2Way(tokenizer, padding=True, pad_to_multiple_of=8, max_length=1024)
+    data_collator = mu.KIND_TO_DATACOLLATOR[config.misc.kind](tokenizer, padding=True, pad_to_multiple_of=8, max_length=1024)
     
     import numpy as np
     def compute_metrics_text(tokenizer):
         def compute_metrics(eval_pred):
             predictions, labels = eval_pred
-            decoded_preds = tokenizer.batch_decode(predictions[0], skip_special_tokens=True)
+            decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     
-            labels = np.where(labels[0] != -100, labels[0], tokenizer.pad_token_id)
+            labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
             decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
     
             acc = np.mean(np.array(decoded_preds) == np.array(decoded_labels))
@@ -179,5 +180,6 @@ def main(config_path: str):
 if __name__ == "__main__":
     parser = ap.ArgumentParser(prog="train.py")
     parser.add_argument("-c", "--config", type=str, help="Path to yaml config")
+    parser.add_argument("-o", "--output", type=str, default="model", help="Output name for model")
     args = parser.parse_args()
-    main(args.config)
+    main(args.config, args.output)

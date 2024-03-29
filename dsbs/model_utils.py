@@ -14,11 +14,15 @@
 
 
 import torch
+import sys
 from typing import Any, Dict, List, Optional, Tuple, Union
 from torch import nn
 from transformers import DataCollatorForSeq2Seq
 from transformers import Seq2SeqTrainer
 from transformers import PreTrainedTokenizer
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def length_fn(examples):
@@ -141,6 +145,13 @@ class DataCollator3Way(DataCollatorForSeq2Seq):
             'expl': expl_features,
             'antiexpl': antiexpl_features
         }
+    
+
+KIND_TO_DATACOLLATOR = {
+    '1way': DataCollator1Way,
+    '2way': DataCollator2Way,
+    '3way': DataCollator3Way
+}
 
 
 class TaskPrefixTrainer(Seq2SeqTrainer):
@@ -183,7 +194,7 @@ class TaskPrefixTrainer(Seq2SeqTrainer):
             pred_outputs = model(**inputs['pred'])
             expl_outputs = model(**inputs['expl'])
             antiexpl_outputs = model(**inputs['antiexpl'])
-            loss = self.alpha1 * pred_outputs.loss + self.alpha2 * expl_outputs.loss + (1 - self.alpha1 - self.alpha2) * antiexpl_outputs
+            loss = self.alpha1 * pred_outputs.loss + self.alpha2 * expl_outputs.loss + (1 - self.alpha1 - self.alpha2) * antiexpl_outputs.loss
             return (
                 loss,
                 {
@@ -203,6 +214,7 @@ class TaskPrefixTrainer(Seq2SeqTrainer):
 
         pred_outputs = super().prediction_step(model, inputs['pred'], prediction_loss_only=False, ignore_keys=ignore_keys)
         loss = pred_outputs[0]
+        logger.info(f"Loss: {loss}")
         return (
             loss,
             pred_outputs[1],
