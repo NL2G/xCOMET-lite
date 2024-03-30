@@ -1,7 +1,7 @@
 misc:
     model_name: "debug"
     base_model_name: "google/mt5-small"
-    kind: "1way"
+    kind: "3way"
     alpha1: 0.5
     alpha2: 0.25
     dataset: "./data/dataset.jsonl.zst"
@@ -11,9 +11,9 @@ misc:
     seed: 0
 
 batch:
-    train_size: 64
-    eval_size: 64
-    accumulation: 2
+    train_size: 16
+    eval_size: 16
+    accumulation: 8
 
 train:
     lr: 5e-5
