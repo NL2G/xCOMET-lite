@@ -12,9 +12,9 @@
 
 nvitop -1
 
-WANDB_NAME="dsbs-2way-small-${SLURM_ARRAY_TASK_ID}" \
-WANDB_PROJECT="dsbs" \
-WANDB_RUN_GROUP="dsbs-2way-small" \
+WANDB_NAME="x-dsbs-2way-small-${SLURM_ARRAY_TASK_ID}" \
+WANDB_PROJECT="x-dsbs" \
+WANDB_RUN_GROUP="v3-dsbs-2way-small" \
 srun accelerate launch train.py \
     -c ./config/full2way.yaml \
     -o "dsbs-2way-small-${SLURM_ARRAY_TASK_ID}" \

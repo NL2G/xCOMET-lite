@@ -12,9 +12,9 @@
 
 nvitop -1
 
-WANDB_NAME="dsbs-1way-small-${SLURM_ARRAY_TASK_ID}" \
-WANDB_PROJECT="dsbs" \
-WANDB_RUN_GROUP="dsbs-1way-small" \
+WANDB_NAME="x-dsbs-1way-small-${SLURM_ARRAY_TASK_ID}" \
+WANDB_PROJECT="x-dsbs" \
+WANDB_RUN_GROUP="v3-dsbs-1way-small" \
 srun accelerate launch train.py \
     -c ./config/full1way.yaml \
     -o "dsbs-1way-small-${SLURM_ARRAY_TASK_ID}" \

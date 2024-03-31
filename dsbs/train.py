@@ -4,7 +4,7 @@
 
 import os
 os.environ['HF_HOME'] = "/pfs/work7/workspace/scratch/ma_dalarion-data-cache/hf"
-
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = "expandable_segments:True"
 from rich import print
 import datasets as ds
 import model_utils as mu
@@ -48,7 +48,8 @@ def main(config_path: str, output_name: str = "model", seed: int = 42):
         logging_strategy='steps', 
         logging_steps=10,
         seed=seed,
-        predict_with_generate=True, 
+        predict_with_generate=True,
+        generation_max_length=128,
         prediction_loss_only=False, 
         per_device_train_batch_size=config.batch.train_size, 
         per_device_eval_batch_size=config.batch.eval_size,
@@ -60,12 +61,16 @@ def main(config_path: str, output_name: str = "model", seed: int = 42):
         lr_scheduler_type=config.train.lr_scheduler, 
         warmup_ratio=config.train.warmup_ratio,
         save_strategy='steps', 
+        tf32=True,
+        bf16=True,
+        bf16_full_eval=True,
         save_steps=config.train.eval_steps, 
         save_safetensors=True, 
         group_by_length=True, length_column_name='length',
         save_total_limit=1, load_best_model_at_end=True,
         report_to="wandb", metric_for_best_model="accuracy#class",
-        ddp_find_unused_parameters=False
+        ddp_find_unused_parameters=False,
+        dataloader_num_workers=2
     )
 
     logging.info(f"Running with arguments: {arguments}")
