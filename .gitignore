@@ -180,3 +180,5 @@ xcomet/scripts
 xcomet/logs
 !xcomet/*_results/**/report.json
 !xcomet/*_results/*.csv
+xcomet/data/mqm-spans-with-year-and-domain-but-no-news-2022.csv
+dsbs/data/dataset.jsonl.zst

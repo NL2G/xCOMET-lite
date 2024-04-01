@@ -16,7 +16,7 @@ class DeBERTaEncoder(BERTEncoder):
                 pretrained_model
             )
         else:
-            self.model = tr.AutoModel(
+            self.model = tr.AutoModel.from_config(
                 tr.AutoConfig.from_pretrained(pretrained_model),
             )
         self.model.encoder.output_hidden_states = True
