@@ -165,8 +165,7 @@ def print_summary(report: dict):
     logger.info(f'Model load time: {report["model_load_time"]}')
     logger.info(f'Train time: {report["train_time"]}\n')
     logger.info(f'Max memory: {report["peak_memory_mb"]} Mb')
-    logger.info(f'Train full kendall correlation: {report["train_full_kendall_correlation"]}')
-    # print("Validation full kendall correlation:", report["val_full_kendall_correlation"])
+    logger.info(f'Validation full kendall correlation: {report["val_full_kendall_correlation"]}')
 
 
 # Option A: hardcode error-span dataset, hardcode splits into train/val/test
@@ -175,8 +174,6 @@ def print_summary(report: dict):
 
 def get_datasets(args, track_time):
     start = time.perf_counter()
-
-    test_path = "data/wmt-mqm-human-evaluation.csv"
 
     train_dataset = load_dataset(args.train_dataset)["train"]
 
@@ -257,7 +254,7 @@ def train_one_epoch(
                 for k, v in inputs.items()
             }
             
-            with autocast(device_type='cuda', dtype=torch.float16):
+            with autocast(device_type='cuda', dtype=torch.bfloat16):
                 output = model(**inputs)
 
                 # keep only logits corresponding to "mt" part of input, as we only predict error spans there
