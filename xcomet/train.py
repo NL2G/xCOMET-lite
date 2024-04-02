@@ -233,7 +233,7 @@ def compute_loss(model, output, target):
 
 
 def train_one_epoch(
-    model, optimizer, scheduler, train_dataloader, use_wandb, grad_accum_steps, device, scaler: GradScaler = GradScaler()
+    model, optimizer, scheduler, train_dataloader, use_wandb, grad_accum_steps, device, scaler: GradScaler
 ):
     model.train()
     losses = []
@@ -393,10 +393,13 @@ def main():
     optimizers, schedulers = model.configure_optimizers()
     assert len(schedulers) == 0, len(optimizers) == 1
     optimizer = optimizers[0]
+    scaler = GradScaler()
 
     if args.use_wandb:
         wandb.login()
         wandb.init(
+            project=args.wandb_project_name,
+            name=args.output.split("/")[-1],
             config=vars(args),
         )
 
@@ -429,6 +432,7 @@ def main():
                 args.use_wandb,
                 args.grad_accum_steps,
                 device,
+                scaler,
             )
         )
         torch.save(model.state_dict(), output_path / "checkpoint.pth")
@@ -438,7 +442,7 @@ def main():
         pd.DataFrame(val_metrics).to_csv(output_path / "val_metrics.csv", index=False)
 
         if args.use_wandb:
-             wandb.log(val_metrics[-1])
+            wandb.log(val_metrics[-1])
 
     train_time = time.perf_counter() - train_start
     # Construct report
@@ -450,7 +454,7 @@ def main():
         "model_load_time": round(model_load_time, 2),
         "train_time": round(train_time, 2),
         "train_dataset_length": len(train_dataset),
-        # "val_dataset_length": len(val_dataset),
+        "val_dataset_length": len(val_dataset),
     }
     report = report | val_metrics[-1]
     report = report | vars(args)
