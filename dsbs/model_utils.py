@@ -19,11 +19,94 @@ from torch import nn
 from transformers import DataCollatorForSeq2Seq
 from transformers import Seq2SeqTrainer
 from transformers import PreTrainedTokenizer
+import logging
+import numpy as np
+import evaluate
+
+logger = logging.getLogger(__name__)
 
 
 def length_fn(examples):
     return {'length': [len(x) for x in examples['input_ids']]}
 
+
+def compute_token_accuracy(tokenizer, predictions, labels):
+    labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+    predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
+    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+
+    acc = np.mean(np.array(decoded_preds) == np.array(decoded_labels))
+    return acc
+
+def compute_sacrebleu(tokenizer, predictions, labels, sacrebleu):
+    labels = np.where(labels != -100, labels, tokenizer.pad_token_id)
+    predictions = np.where(predictions != -100, predictions, tokenizer.pad_token_id)
+    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+
+    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+
+    scores = sacrebleu.compute(
+        predictions=decoded_preds, 
+        references=[[x] for x in decoded_labels],
+        tokenize="intl",
+        lowercase=True
+    )
+
+    return scores['score']
+
+
+def compute_metrics_1way(tokenizer):
+    def compute_metrics(eval_pred):
+        predictions, labels = eval_pred
+        acc = compute_token_accuracy(tokenizer, predictions, labels)
+
+        return {'accuracy#class': acc}
+
+    return compute_metrics
+
+def compute_metrics_2way(tokenizer):
+    sacrebleu = evaluate.load("sacrebleu")
+    def compute_metrics(eval_pred):
+        (predictions_class, predictions_rationale), (labels_class, labels_rationale) = eval_pred
+        acc_class = compute_token_accuracy(tokenizer, predictions_class, labels_class)
+        acc_rationale = compute_token_accuracy(tokenizer, predictions_rationale, labels_rationale)
+        bleu_rationale = compute_sacrebleu(tokenizer, predictions_rationale, labels_rationale, sacrebleu)
+        return {
+            'accuracy#class': acc_class, 
+            'accuracy#rationale': acc_rationale,
+            'bleu#rationale': bleu_rationale
+        }
+
+    return compute_metrics
+
+
+def compute_metrics_3way(tokenizer):
+    sacrebleu = evaluate.load("sacrebleu")
+    def compute_metrics(eval_pred):
+        (predictions_class, predictions_rationale, predictions_antirationale), (labels_class, labels_rationale, labels_antirationale) = eval_pred
+        acc_class = compute_token_accuracy(tokenizer, predictions_class, labels_class)
+        acc_rationale = compute_token_accuracy(tokenizer, predictions_rationale, labels_rationale)
+        acc_antirationale = compute_token_accuracy(tokenizer, predictions_antirationale, labels_antirationale)
+        bleu_rationale = compute_sacrebleu(tokenizer, predictions_rationale, labels_rationale, sacrebleu)
+        bleu_antirationale = compute_sacrebleu(tokenizer, predictions_antirationale, labels_antirationale, sacrebleu)
+        
+        return {
+            'accuracy#class': acc_class, 
+            'accuracy#rationale': acc_rationale, 
+            'accuracy#antirationale': acc_antirationale,
+            'bleu#rationale': bleu_rationale,
+            'bleu#antirationale': bleu_antirationale
+        }
+    return compute_metrics
+    
+
+KIND_TO_COMPUTE_METRICS = {
+    '1way': compute_metrics_1way,
+    '2way': compute_metrics_2way,
+    '3way': compute_metrics_3way
+}
 
 def get_tokenize_fn(tokenizer: PreTrainedTokenizer, kind: str = '1way'):
     
@@ -141,6 +224,13 @@ class DataCollator3Way(DataCollatorForSeq2Seq):
             'expl': expl_features,
             'antiexpl': antiexpl_features
         }
+    
+
+KIND_TO_DATACOLLATOR = {
+    '1way': DataCollator1Way,
+    '2way': DataCollator2Way,
+    '3way': DataCollator3Way
+}
 
 
 class TaskPrefixTrainer(Seq2SeqTrainer):
@@ -183,7 +273,7 @@ class TaskPrefixTrainer(Seq2SeqTrainer):
             pred_outputs = model(**inputs['pred'])
             expl_outputs = model(**inputs['expl'])
             antiexpl_outputs = model(**inputs['antiexpl'])
-            loss = self.alpha1 * pred_outputs.loss + self.alpha2 * expl_outputs.loss + (1 - self.alpha1 - self.alpha2) * antiexpl_outputs
+            loss = self.alpha1 * pred_outputs.loss + self.alpha2 * expl_outputs.loss + (1 - self.alpha1 - self.alpha2) * antiexpl_outputs.loss
             return (
                 loss,
                 {
@@ -201,10 +291,31 @@ class TaskPrefixTrainer(Seq2SeqTrainer):
         ignore_keys: Optional[List[str]] = None
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
 
-        pred_outputs = super().prediction_step(model, inputs['pred'], prediction_loss_only=False, ignore_keys=ignore_keys)
-        loss = pred_outputs[0]
-        return (
-            loss,
-            pred_outputs[1],
-            pred_outputs[2]
-        )
+        if self.kind == '1way':
+            pred_outputs = super().prediction_step(model, inputs['pred'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            loss = pred_outputs[0]
+            return (
+                loss,
+                pred_outputs[1],
+                pred_outputs[2]
+            )
+        elif self.kind == '2way':
+            pred_outputs = super().prediction_step(model, inputs['pred'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            expl_outputs = super().prediction_step(model, inputs['expl'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            loss = self.alpha1 * pred_outputs[0] + (1. - self.alpha1) * expl_outputs[0]
+            return (
+                loss,
+                (pred_outputs[1], expl_outputs[1]),
+                (pred_outputs[2], expl_outputs[2])
+            )
+        else:
+            # 3way
+            pred_outputs = super().prediction_step(model, inputs['pred'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            expl_outputs = super().prediction_step(model, inputs['expl'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            antiexpl_outputs = super().prediction_step(model, inputs['antiexpl'], prediction_loss_only=False, ignore_keys=ignore_keys)
+            loss = self.alpha1 * pred_outputs[0] + self.alpha2 * expl_outputs[0] + (1 - self.alpha1 - self.alpha2) * antiexpl_outputs[0]
+            return (
+                loss,
+                (pred_outputs[1], expl_outputs[1], antiexpl_outputs[1]),
+                (pred_outputs[2], expl_outputs[2], antiexpl_outputs[2])
+            )
