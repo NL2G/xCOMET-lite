@@ -1,7 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=eval-mdeberta-lowbs
-#SBATCH --output=./logs/eval-mdeberta-lowbs-%A-[%a].txt
-#SBATCH --error=./error-logs/eval-mdeberta-lowbs-%A-[%a].txt
+#SBATCH --job-name=eval-mdeberta-lowlr
+#SBATCH --output=./logs/eval-mdeberta-lowlr-%A-[%a].txt
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
@@ -11,7 +10,7 @@
 #SBATCH --partition=single
 #SBATCH --array=0-8
 
-# Add your commands here
+nvitop -1
 
 seeds=(
     "0"
@@ -36,14 +35,14 @@ lps=(
     "en-ru"
     "en-ru"
 )
-
-srun python eval_checkpoint.py \
+echo "Running for seed ${seeds[$SLURM_ARRAY_TASK_ID]} and lp ${lps[$SLURM_ARRAY_TASK_ID]} on ${SLURM_ARRAY_TASK_ID}"
+python eval_checkpoint.py \
     --dataset="RicardoRei/wmt-mqm-human-evaluation" \
     --domain="news" \
     --lp=${lps[$SLURM_ARRAY_TASK_ID]} \
     --seed=${seeds[$SLURM_ARRAY_TASK_ID]} \
     --year=2022 \
-    --output="distillation_results/synthplus-mdeberta-lowbs-${SLURM_ARRAY_TASK_ID}" \
+    --output="distillation_results/synthplus-mdeberta-no-freeze-lowlr-${seeds[$SLURM_ARRAY_TASK_ID]}" \
     --pretrained-model="microsoft/mdeberta-v3-base" \
     --encoder-model="DeBERTa" \
     --word-layer=8 \
