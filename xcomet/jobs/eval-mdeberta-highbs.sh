@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=eval-mdeberta
-#SBATCH --output=./logs/eval-mdeberta-%A-[%a].txt
+#SBATCH --job-name=eval-mdeberta-highbs
+#SBATCH --output=./logs/eval-mdeberta-highbs-%A-[%a].txt
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=16
@@ -10,8 +10,8 @@
 #SBATCH --partition=single
 #SBATCH --array=0-8
 
-# Add your commands here
 nvitop -1
+
 seeds=(
     "0"
     "1"
@@ -42,7 +42,7 @@ python eval_checkpoint.py \
     --lp=${lps[$SLURM_ARRAY_TASK_ID]} \
     --seed=${seeds[$SLURM_ARRAY_TASK_ID]} \
     --year=2022 \
-    --output="distillation_results/synthplus-mdeberta-no-freeze-${seeds[$SLURM_ARRAY_TASK_ID]}" \
+    --output="distillation_results/synthplus-mdeberta-no-freeze-highbs-${seeds[$SLURM_ARRAY_TASK_ID]}" \
     --pretrained-model="microsoft/mdeberta-v3-base" \
     --encoder-model="DeBERTa" \
     --word-layer=8 \
