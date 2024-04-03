@@ -38,7 +38,7 @@ def make_parser():
     parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
     parser.add_argument("--batch-size", type=int, default=8, help="Evaluation batch size")
     parser.add_argument("--n-layers-to-prune", type=int, help="Amount of layers to prune", required=True)
-    parser.add_argument("--do-finetune", action="store_true", help="Whether to tune the biases in the model to compensate for pruning")
+    parser.add_argument("--do-finetune", action="store_true", help="If chosen, script only prunes and finetunes the model; otherwise it only evaluates pruned model.")
 
     parser.add_argument("--model", default="Unbabel/XCOMET-XL", help="Which XCOMET model to load", required=True)
 
