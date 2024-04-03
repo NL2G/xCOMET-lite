@@ -257,9 +257,10 @@ def train_one_epoch(
             with autocast(device_type='cuda', dtype=torch.bfloat16):
                 output = model(**inputs)
 
-                # keep only logits corresponding to "mt" part of input, as we only predict error spans there
-                seq_len = target.mt_length.max()
-                output.logits = output.logits[:, :seq_len]
+                if model.word_level:
+                    # keep only logits corresponding to "mt" part of input, as we only predict error spans there
+                    seq_len = target.mt_length.max()
+                    output.logits = output.logits[:, :seq_len]
 
                 loss = loss + compute_loss(model, output, target)
 
