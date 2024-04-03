@@ -50,7 +50,6 @@ def print_summary(report: dict):
     print("Prediction time:", report.get("prediction_time"), "\n")
     print("Max memory:", report.get("peak_memory_mb"), "Mb")
     print("Kendall correlation:", report.get("kendall_correlation"))
-    print("Random Kendall correlation:", report.get("random_kendall_correlation"))
 
 
 def get_dataset(args, track_time):
@@ -90,19 +89,6 @@ def get_model(args, track_time):
     return model
 
 
-def structured_prune(model, fraction_to_prune: float):
-    parameters_to_prune = [
-        (module, "weight") for module in filter(lambda m: isinstance(m, nn.Linear), model.modules())
-    ]
-
-    for module, name in parameters_to_prune:
-        prune.ln_structured(module, name=name, amount=fraction_to_prune, n=2, dim=1)
-
-    for (module_, _ ) in parameters_to_prune:
-        prune.remove(module_, 'weight')
-
-    return model
-
 def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = None):
     """Implements simple layer pruning heuristic as described in https://arxiv.org/abs/2403.17887v1.
     Prunes n layers, starting from a penultimate layer.
@@ -124,14 +110,17 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
     
     return model
 
+
 def finetune(pruned_model, args, device):
+    """Finetunes the model on a small random subset of WMT MQM evaluation dataset (news 2022 excluded).
+    """
     # Data
     train_dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation")["train"]
     train_dataset = train_dataset.filter(lambda example:
         not (example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp))
     train_dataset = train_dataset.shuffle(seed=11).select(range(16_000))
 
-    train_batch_size = 16
+    train_batch_size = 8
     sampler = LengthGroupedSampler(
         batch_size=train_batch_size, dataset=train_dataset, model_input_name="src"
     )
@@ -143,25 +132,28 @@ def finetune(pruned_model, args, device):
     def requires_grad_predicate(name):
         return name.endswith("bias") or \
             "layerwise_attention.scalar_parameters" in name or \
-            "hidden2tag" in name or \
-            "estimator" in name
+            "estimator" in name or \
+            "LayerNorm" in name
 
-    pruned_model = pruned_model.half()
+    #pruned_model = pruned_model.half()
     for name, param in pruned_model.named_parameters():
         param.requires_grad = requires_grad_predicate(name)
         if param.requires_grad:
             param.data = param.data.to(torch.float32)
     
-    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=1e-5)
+    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=1e-6)
     print(f"Total parameters: {sum(p.numel() for p in pruned_model.parameters()) / 1e6:0.2f} M")
     print(f"Trained parameters: {sum(p.numel() for p in pruned_model.parameters() if p.requires_grad) / 1e6:0.2f} M")
 
     pruned_model.to(device)
     enable_gradient_checkpointing(pruned_model)
 
+    pruned_model.word_level = False
+    pruned_model.hparams.loss_lambda = 0
+
     # Finetune
     losses = train_one_epoch(pruned_model, optimizer, None, train_dataloader, use_wandb=False,
-        grad_accum_steps=1, device=device, scaler=GradScaler())
+        grad_accum_steps=32, device=device, scaler=None)
     
     # Save trained parameters
     finetune_output_path = Path(args.output) / "training"
@@ -175,14 +167,18 @@ def finetune(pruned_model, args, device):
     plt.title(args.output)
     plt.savefig(finetune_output_path / "losses.png")
 
+
 def load_pruned_tuned_model(args):
+    """Loads a model, prunes the layers, and loads finetuned parameters if there is a corresponding checkpoint.
+    """
     start = time.perf_counter()
     model = get_model(args, track_time=False)
 
     prune_layers(model, args.n_layers_to_prune)
     
     finetune_output_path = Path(args.output) / "training"
-    model.load_state_dict(torch.load(finetune_output_path / "tuned_params.pth"), strict=False)
+    if finetune_output_path.exists():
+        model.load_state_dict(torch.load(finetune_output_path / "tuned_params.pth"), strict=False)
 
     return model.half(), time.perf_counter() - start
 
@@ -210,7 +206,7 @@ def main():
 # Check for earlier launches
     output_path = Path(args.output) / "evaluations" / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
 
-    if os.path.exists(output_path) and args.do_finetune:
+    if not args.do_finetune and output_path.exists():
         print("Reusing previous results. Change output folder or delete this folder to recompute.")
         return
 
@@ -222,23 +218,7 @@ def main():
 # Data
     dataset, ground_truth, dataset_load_time = get_dataset(args, track_time=True)
 
-# channel pruning
-    # def count_zeros_fraction(model):
-    #     n_parameters = sum(p.numel() for p in model.parameters())
-    #     # There is a lot of parameters in embeddings, which are not sparsified
-    #     n_parameters = n_parameters - model.encoder.model.embeddings.word_embeddings.weight.numel()
-    #     n_zeros = sum(torch.isclose(p, torch.zeros_like(p)).sum() for p in model.parameters())
-    #     return n_zeros / n_parameters
-
-    # print(f"Parameter count: {sum(p.numel() for p in model.parameters()) / 1e6:.1f} M")
-
-    # print(f"Original\nSparsity: {count_zeros_fraction(model):.3f}\n")
-    # structured_prune(model, 0.6)
-    # print("="*70)
-    # print(f"Pruned\nSparsity: {count_zeros_fraction(model):.3f}\n")
-  
-# Fancy layer pruning
-    
+# Layer pruning
     if args.do_finetune:
         model, model_load_time = get_model(args, track_time=True)
         prune_layers(model, args.n_layers_to_prune)
@@ -256,12 +236,10 @@ def main():
 # Construct report
     peak_memory_mb = torch.cuda.max_memory_allocated() // 2 ** 20
     kendall_corr = kendalltau(ground_truth, segment_scores)
-    random_kendall_corr = kendalltau(ground_truth, np.random.rand(len(ground_truth)))
 
     report = {
         "kendall_correlation": kendall_corr[0],
         "kendall_p_value": kendall_corr[1],
-        "random_kendall_correlation": random_kendall_corr[0],
         "peak_memory_mb": peak_memory_mb,
         "system_level_score": model_output.system_score,
         "dataset_load_time": round(dataset_load_time, 2),
