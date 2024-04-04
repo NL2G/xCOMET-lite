@@ -1,4 +1,6 @@
 import json
+import math
+import functools
 import numpy as np
 import pandas as pd
 import torch
@@ -122,3 +124,42 @@ def enable_gradient_checkpointing(model):
     model.encoder.model.encoder.layer = torch.nn.ModuleList([
         CheckpointedXLMRobertaLayer(layer) for layer in model.encoder.model.encoder.layer
     ])
+
+#
+# Taken from https://gist.github.com/akshaychawla/86d938bc6346cf535dce766c83f743ce
+#
+def _cosine_decay_warmup(iteration, warmup_iterations, total_iterations):
+    """
+    Linear warmup from 0 --> 1.0, then decay using cosine decay to 0.0
+    """
+    if iteration <= warmup_iterations:
+        multiplier = iteration / warmup_iterations
+    else:
+        multiplier = (iteration - warmup_iterations) / (total_iterations - warmup_iterations)
+        multiplier = 0.5 * (1 + math.cos(math.pi * multiplier))
+    return multiplier
+
+def _constant_warmup(iteration, warmup_iterations):
+    """
+    Linear warmup from 0 --> 1.0, then constant
+    """
+    multiplier = 1.0
+    if iteration <= warmup_iterations:
+        multiplier = iteration / warmup_iterations
+    return multiplier
+
+def CosineAnnealingLRWarmup(optimizer, T_max, T_warmup):
+    _decay_func = functools.partial(
+        _cosine_decay_warmup, 
+        warmup_iterations=T_warmup, total_iterations=T_max
+    )
+    scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
+    return scheduler
+
+def LinearWarmup(optimizer, T_warmup):
+    _decay_func = functools.partial(
+        _constant_warmup, 
+        warmup_iterations=T_warmup
+    )
+    scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
+    return scheduler
