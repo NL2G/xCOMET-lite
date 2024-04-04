@@ -115,18 +115,17 @@ def finetune(pruned_model, args, device):
     """Finetunes the model on a subset of WMT MQM evaluation dataset (news 2022 excluded).
     """
     # Data
-    train_dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation")["train"]
-    train_dataset = train_dataset.filter(lambda example:
-        not (example["year"] == args.year and example["domain"] == args.domain))
-    train_dataset = train_dataset.shuffle(seed=11).select(range(80_000))
+    # train_dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation")["train"]
+    # train_dataset = train_dataset.filter(lambda example:
+    #     not (example["year"] == args.year and example["domain"] == args.domain))
+    # train_dataset = train_dataset.shuffle(seed=11).select(range(80_000))
+    finetune_data_path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
+    train_dataset = MQMDataset(finetune_data_path)
 
     train_batch_size = 8
     grad_accum_steps = 16
-    sampler = LengthGroupedSampler(
-        batch_size=train_batch_size, dataset=train_dataset, model_input_name="src"
-    )
     train_dataloader = torch.utils.data.DataLoader(
-        dataset=train_dataset, batch_size=train_batch_size, sampler=sampler, collate_fn=lambda x: x
+        dataset=train_dataset, batch_size=train_batch_size, collate_fn=lambda x: x
     )
 
     # Prepare model
