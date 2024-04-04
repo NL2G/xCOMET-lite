@@ -23,9 +23,9 @@ import comet
 from torch.cuda.amp import GradScaler
 from datasets import load_dataset
 
-from utils import load_json, dump_json, load_tsv, LengthGroupedSampler, enable_gradient_checkpointing
 from source.mqm_dataset import MQMDataset
 from train import train_one_epoch, prepare_sample, compute_loss
+from utils import load_json, dump_json, load_tsv, LengthGroupedSampler, enable_gradient_checkpointing, CosineAnnealingLRWarmup
 
 def make_parser():
     parser = ArgumentParser(description="MQM evaluation.")
@@ -112,15 +112,16 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
 
 
 def finetune(pruned_model, args, device):
-    """Finetunes the model on a small random subset of WMT MQM evaluation dataset (news 2022 excluded).
+    """Finetunes the model on a subset of WMT MQM evaluation dataset (news 2022 excluded).
     """
     # Data
     train_dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation")["train"]
     train_dataset = train_dataset.filter(lambda example:
-        not (example["year"] == args.year and example["domain"] == args.domain and example["lp"] == args.lp))
-    train_dataset = train_dataset.shuffle(seed=11).select(range(16_000))
+        not (example["year"] == args.year and example["domain"] == args.domain))
+    train_dataset = train_dataset.shuffle(seed=11).select(range(80_000))
 
     train_batch_size = 8
+    grad_accum_steps = 16
     sampler = LengthGroupedSampler(
         batch_size=train_batch_size, dataset=train_dataset, model_input_name="src"
     )
@@ -130,20 +131,25 @@ def finetune(pruned_model, args, device):
 
     # Prepare model
     def requires_grad_predicate(name):
-        return name.endswith("bias") or \
-            "layerwise_attention.scalar_parameters" in name or \
+        return "layerwise_attention.scalar_parameters" in name or \
             "estimator" in name or \
-            "LayerNorm" in name
+            "LayerNorm" in name or \
+            name.endswith("bias")
 
-    #pruned_model = pruned_model.half()
     for name, param in pruned_model.named_parameters():
         param.requires_grad = requires_grad_predicate(name)
         if param.requires_grad:
             param.data = param.data.to(torch.float32)
-    
-    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=1e-6)
     print(f"Total parameters: {sum(p.numel() for p in pruned_model.parameters()) / 1e6:0.2f} M")
     print(f"Trained parameters: {sum(p.numel() for p in pruned_model.parameters() if p.requires_grad) / 1e6:0.2f} M")
+
+    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=1e-4)
+
+    scheduler = CosineAnnealingLRWarmup(
+        optimizer,
+        T_max=len(train_dataloader) // grad_accum_steps,
+        T_warmup=len(train_dataloader) / 10 // grad_accum_steps
+    )
 
     pruned_model.to(device)
     enable_gradient_checkpointing(pruned_model)
@@ -152,21 +158,20 @@ def finetune(pruned_model, args, device):
     pruned_model.hparams.loss_lambda = 0
 
     # Finetune
-    losses = train_one_epoch(pruned_model, optimizer, None, train_dataloader, use_wandb=False,
-        grad_accum_steps=32, device=device, scaler=None)
+    losses = train_one_epoch(pruned_model, optimizer, scheduler, train_dataloader, use_wandb=False,
+        grad_accum_steps=grad_accum_steps, device=device, scaler=GradScaler())
     
     # Save trained parameters
     finetune_output_path = Path(args.output) / "training"
     finetune_output_path.mkdir(parents=True, exist_ok=True)
     torch.save(
-        {name: param for name, param in pruned_model.state_dict().items() if requires_grad_predicate(name)},
+        {name: param.detach().cpu() for name, param in pruned_model.named_parameters() if param.requires_grad},
         finetune_output_path / "tuned_params.pth"
     )
     np.save(finetune_output_path / "losses.npy", losses)
     plt.plot(losses)
     plt.title(args.output)
     plt.savefig(finetune_output_path / "losses.png")
-
 
 def load_pruned_tuned_model(args):
     """Loads a model, prunes the layers, and loads finetuned parameters if there is a corresponding checkpoint.
@@ -178,7 +183,10 @@ def load_pruned_tuned_model(args):
     
     finetune_output_path = Path(args.output) / "training"
     if finetune_output_path.exists():
-        model.load_state_dict(torch.load(finetune_output_path / "tuned_params.pth"), strict=False)
+        tuned_params = torch.load(finetune_output_path / "tuned_params.pth")
+        print(f"N tuned params groups found: {len(tuned_params)}")
+        print(f"N tuned params found: {sum(p.numel() for p in tuned_params.values())}")
+        model.load_state_dict(tuned_params, strict=False)
 
     return model.half(), time.perf_counter() - start
 
