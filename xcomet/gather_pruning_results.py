@@ -4,7 +4,7 @@ from utils import load_json
 
 def main():
     for prefix in ("no_reference", "with_reference"):
-        experiment_names = [f"prune{k}layers{suffix}" for k in (4, 8, 12) for suffix in ("", "_finetune4")] + ["vanilla"]
+        experiment_names = [f"prune{k}layers{suffix}" for k in (4, 8, 12) for suffix in ("", "_finetune5")] + ["vanilla"]
         #models = ["xcomet_xl", "xcomet_xxl"]
         
         results_dir_name = "pruning_results"
@@ -18,7 +18,6 @@ def main():
                 for language_pair in (other_language_pairs if prefix == "no_reference" else all_language_pairs)
                 for experiment_name in experiment_names
         ]
-        print(paths)
         paths = [path for path in paths if os.path.exists(path)]
 
         records = [load_json(path) for path in paths]
