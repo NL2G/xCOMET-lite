@@ -4,7 +4,7 @@ from utils import load_json
 
 def main():
     for prefix in ("no_reference", "with_reference"):
-        experiment_names = [f"prune{k}layers{suffix}" for k in (4, 8, 12) for suffix in ("", "_finetune5")] + ["vanilla"]
+        experiment_names = [f"prune{k:02d}layers{suffix}" for k in (4, 8, 12) for suffix in ("", "_finetune6")] + ["vanilla"]
         #models = ["xcomet_xl", "xcomet_xxl"]
         
         results_dir_name = "pruning_results"
