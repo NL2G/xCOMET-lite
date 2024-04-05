@@ -25,7 +25,7 @@ from datasets import load_dataset
 
 from source.mqm_dataset import MQMDataset
 from train import train_one_epoch, prepare_sample, compute_loss
-from utils import load_json, dump_json, load_tsv, LengthGroupedSampler, enable_gradient_checkpointing, CosineAnnealingLRWarmup
+from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup
 
 def make_parser():
     parser = ArgumentParser(description="MQM evaluation.")
@@ -112,20 +112,16 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
 
 
 def finetune(pruned_model, args, device):
-    """Finetunes the model on a subset of WMT MQM evaluation dataset (news 2022 excluded).
+    """Finetunes the model on WMT MQM evaluation dataset (news 2022 excluded).
     """
     # Data
-    # train_dataset = load_dataset("RicardoRei/wmt-mqm-human-evaluation")["train"]
-    # train_dataset = train_dataset.filter(lambda example:
-    #     not (example["year"] == args.year and example["domain"] == args.domain))
-    # train_dataset = train_dataset.shuffle(seed=11).select(range(80_000))
     finetune_data_path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
     train_dataset = MQMDataset(finetune_data_path)
 
     train_batch_size = 8
     grad_accum_steps = 16
     train_dataloader = torch.utils.data.DataLoader(
-        dataset=train_dataset, batch_size=train_batch_size, collate_fn=lambda x: x
+        dataset=train_dataset, batch_size=train_batch_size, collate_fn=lambda x: x, shuffle=True
     )
 
     # Prepare model
@@ -211,9 +207,12 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
 
 # Check for earlier launches
-    output_path = Path(args.output) / "evaluations" / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
-
-    if not args.do_finetune and output_path.exists():
+    if args.do_finetune:
+        output_path = Path(args.output) / "training"
+    else:
+        output_path = Path(args.output) / "evaluations" / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
+    
+    if output_path.exists():
         print("Reusing previous results. Change output folder or delete this folder to recompute.")
         return
 
