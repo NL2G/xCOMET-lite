@@ -1,0 +1,34 @@
+{
+  "kendall_correlation": 0.23906619661371867,
+  "kendall_p_value": 4.3446561820819134e-108,
+  "peak_memory_mb": 1504,
+  "system_level_score": 0.8605027976565891,
+  "dataset_load_time": 2.4,
+  "model_load_time": 4.6,
+  "prediction_time": 30.92,
+  "dataset_length": 4500,
+  "output": "distillation_results/synthplus-mdeberta-0",
+  "lp": "en-ru",
+  "dataset": "RicardoRei/wmt-mqm-human-evaluation",
+  "domain": "news",
+  "year": 2022,
+  "seed": 0,
+  "n_gpus": 1,
+  "batch_size": 8,
+  "encoder_model": "DeBERTa",
+  "pretrained_model": "microsoft/mdeberta-v3-base",
+  "word_layer": 8,
+  "word_level": true,
+  "hidden_sizes": [
+    3072,
+    1024
+  ],
+  "CUDA_VISIBLE_DEVICES": "0",
+  "torch.version.cuda": "12.1",
+  "torch.backends.cudnn.version()": 8902,
+  "torch.cuda.nccl.version()": [
+    2,
+    19,
+    3
+  ]
+}
