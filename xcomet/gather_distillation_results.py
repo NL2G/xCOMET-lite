@@ -4,7 +4,17 @@ from utils import load_json
 
 def main():
     for prefix in ["with_reference"]:
-        experiment_names = ["synth", "synthplus-mdeberta-0", "synthplus-mdeberta-1", "synthplus-mdeberta-2"]
+        experiment_names = [
+            "synthplus-mdeberta-no-freeze-0",
+            "synthplus-mdeberta-no-freeze-1",
+            "synthplus-mdeberta-no-freeze-2",
+            "synthplus-mdeberta-no-freeze-highbs-0",
+            "synthplus-mdeberta-no-freeze-highbs-1",
+            "synthplus-mdeberta-no-freeze-highbs-2",
+            "synthplus-mdeberta-no-freeze-lowlr-0",
+            "synthplus-mdeberta-no-freeze-lowlr-1",
+            "synthplus-mdeberta-no-freeze-lowlr-2",
+        ]
         
         results_dir_name = "distillation_results"
         all_language_pairs = ("en-de", "en-ru", "zh-en")

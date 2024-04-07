@@ -1,8 +1,10 @@
 import json
+import math
+import functools
 import numpy as np
 import pandas as pd
 import torch
-from typing import Optional
+from typing import Optional, Tuple
 import gc
 
 from torch.utils.data import Sampler, Dataset
@@ -97,3 +99,67 @@ class LengthGroupedSampler(Sampler):
     def __iter__(self):
         indices = get_length_grouped_indices(self.lengths, self.batch_size, generator=self.generator)
         return iter(indices)
+
+
+class CheckpointedXLMRobertaLayer(torch.nn.Module):
+    def __init__(self, layer):
+        super().__init__()
+        self.layer = layer
+    
+    # signature was taken from: https://github.com/huggingface/transformers/blob/main/src/transformers/models/xlm_roberta/modeling_xlm_roberta.py#L380
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.FloatTensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.Tensor]:
+        return torch.utils.checkpoint.checkpoint(self.layer, hidden_states, attention_mask, head_mask, encoder_hidden_states, encoder_attention_mask, past_key_value, output_attentions, use_reentrant=False)
+
+def enable_gradient_checkpointing(model):
+    # Gradient checkpointing saves memory during training
+    model.encoder.model.encoder.layer = torch.nn.ModuleList([
+        CheckpointedXLMRobertaLayer(layer) for layer in model.encoder.model.encoder.layer
+    ])
+
+#
+# Taken from https://gist.github.com/akshaychawla/86d938bc6346cf535dce766c83f743ce
+#
+def _cosine_decay_warmup(iteration, warmup_iterations, total_iterations):
+    """
+    Linear warmup from 0 --> 1.0, then decay using cosine decay to 0.0
+    """
+    if iteration <= warmup_iterations:
+        multiplier = iteration / warmup_iterations
+    else:
+        multiplier = (iteration - warmup_iterations) / (total_iterations - warmup_iterations)
+        multiplier = 0.5 * (1 + math.cos(math.pi * multiplier))
+    return multiplier
+
+def _constant_warmup(iteration, warmup_iterations):
+    """
+    Linear warmup from 0 --> 1.0, then constant
+    """
+    multiplier = 1.0
+    if iteration <= warmup_iterations:
+        multiplier = iteration / warmup_iterations
+    return multiplier
+
+def CosineAnnealingLRWarmup(optimizer, T_max, T_warmup):
+    _decay_func = functools.partial(
+        _cosine_decay_warmup, 
+        warmup_iterations=T_warmup, total_iterations=T_max
+    )
+    scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
+    return scheduler
+
+def LinearWarmup(optimizer, T_warmup):
+    _decay_func = functools.partial(
+        _constant_warmup, 
+        warmup_iterations=T_warmup
+    )
+    scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
+    return scheduler
