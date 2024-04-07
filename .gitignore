@@ -182,3 +182,4 @@ xcomet/logs
 !xcomet/*_results/*.csv
 xcomet/data/mqm-spans-with-year-and-domain-but-no-news-2022.csv
 dsbs/data/dataset.jsonl.zst
+*spiece*
