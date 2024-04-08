@@ -79,7 +79,7 @@ def get_dataset(args, track_time):
 
 def get_model(args, track_time):
     start = time.perf_counter()
-    model_path = comet.download_model(args.model)
+    model_path = comet.download_model(args.model, saving_directory="/pfs/work7/workspace/scratch/ma_dalarion-model/xcomet-xxl")
     model = comet.load_from_checkpoint(model_path)
 
     model_load_time = time.perf_counter() - start
@@ -115,7 +115,7 @@ def finetune(pruned_model, args, device):
     """Finetunes the model on WMT MQM evaluation dataset (news 2022 excluded).
     """
     # Data
-    finetune_data_path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
+    finetune_data_path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv.zst"
     train_dataset = MQMDataset(finetune_data_path)
 
     train_batch_size = 8

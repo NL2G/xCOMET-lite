@@ -1,0 +1,13 @@
+model,lp,experiment_name,kendall_correlation,peak_memory_mb,system_level_score,prediction_time,model_load_time,domain,year,setup
+Unbabel/XCOMET-XL,en-de,vanilla,0.434857643710639,7548,0.9085341676494532,30.13,58.13,news,2022,no_reference
+Unbabel/XCOMET-XL,en-es,vanilla,0.3126140014206338,7514,0.8295067850512533,38.45,57.5,news,2022,no_reference
+Unbabel/XCOMET-XL,en-zh,vanilla,0.3858680702883081,7478,0.6438612337516979,29.1,56.24,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-de,prune-xxl-12-layers,0.4448772266651152,17280,0.9371673391576398,18.54,146.03,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-de,prune-xxl-4-layers,0.46849654388029527,20651,0.9371370626750746,22.05,159.07,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-de,prune-xxl-8-layers,0.46589121866746497,18966,0.9485305006043953,19.74,141.89,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-es,prune-xxl-12-layers,0.29488608896324636,17219,0.8847345855724851,21.28,141.2,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-es,prune-xxl-4-layers,0.30019912784189984,20578,0.9007766534906437,25.56,146.27,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-es,prune-xxl-8-layers,0.2893460909634837,18898,0.9022297136558701,23.21,142.55,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-zh,prune-xxl-12-layers,0.41489891658456457,17197,0.8326659703644876,16.64,144.21,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-zh,prune-xxl-4-layers,0.36644235594200264,20553,0.7978457207827605,20.46,147.82,news,2022,no_reference
+Unbabel/XCOMET-XXL,en-zh,prune-xxl-8-layers,0.3809789346882205,18875,0.8223367989525314,18.21,143.53,news,2022,no_reference
