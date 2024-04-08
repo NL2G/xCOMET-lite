@@ -4,14 +4,14 @@ from utils import load_json
 
 def main():
     for prefix in ("no_reference", "with_reference"):
-        experiment_names = [f"prune{k:02d}layers{suffix}" for k in (4, 8, 12) for suffix in ("", "_finetune6")] + ["vanilla"]
+        experiment_names = [f"prune-xxl-{k}-layers" for k in (4, 8, 12)] + ["vanilla"]
         #models = ["xcomet_xl", "xcomet_xxl"]
         
         results_dir_name = "pruning_results"
         all_language_pairs = ("en-de", "en-ru", "zh-en")
         other_language_pairs = ("en-de", "en-es", "en-zh")
         
-        output_name = f"{prefix}_summary.csv"
+        output_name = f"xxl-{prefix}_summary.csv"
 
         paths = [
             f"{results_dir_name}/{experiment_name}/evaluations/{prefix}/{language_pair}/report.json" 
