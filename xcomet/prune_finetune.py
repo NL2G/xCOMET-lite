@@ -41,6 +41,14 @@ def make_parser():
     parser.add_argument("--do-finetune", action="store_true", help="If chosen, script only prunes and finetunes the model; otherwise it only evaluates pruned model.")
     parser.add_argument("--model", default="Unbabel/XCOMET-XL", help="Which XCOMET model to load", required=True)
 
+    parser.add_argument("--finetune-data-path", default="data/mqm-spans-with-year-and-domain-but-no-news-2022.csv", help="Data used for finetuning.")
+    parser.add_argument("--train-batch-size", type=int, default=8, help="Batch size during finetuning")
+    parser.add_argument("--grad-accum-steps", type=int, default=16, help="Amount of gradient accumulation steps during finetuning")
+    parser.add_argument("--n-epochs", type=int, default=1, help="Amount of finetuning epochs")
+    parser.add_argument("--warmup-fraction", type=float, default=0.1, help="Relative length of linear warmup stage in cosine learning rate schedule during finetuning")
+    parser.add_argument("--learning-rate", type=float, default=1e-4, help="Learning rate for finetuning")
+    parser.add_argument("--n-calibration-batches", type=int, default=2000, help="Amount of batches (of train_batch_size size) used to estimate block similarity/importances")
+
     parser.add_argument(
         "--use-cosine-similarity",
         action="store_true",
@@ -116,11 +124,10 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
     
     return model
 
-def find_most_similar_blocks(model, calibration_loader, n_layers_to_prune, device):
+def find_most_similar_blocks(model, calibration_loader, n_layers_to_prune, n_calibration_batches, device):
     backbone = model.encoder.model
     backbone.to(device)
     block_similarities = torch.empty(backbone.config.num_hidden_layers, device=device)
-    n_calibration_batches = 2000
 
     for batch_num, batch in enumerate(tqdm(calibration_loader, desc="estimating similarity", total=n_calibration_batches)):
         inputs, target = model.prepare_sample(batch)
@@ -173,9 +180,9 @@ def prune_given_layers(model, layers_to_prune: set[int], new_word_layer: Optiona
     
     return model
 
-def get_finetune_dataset(train_batch_size, collate_fn, shuffle):
-    finetune_data_path = "data/mqm-spans-with-year-and-domain-but-no-news-2022.csv"
+def get_finetune_dataset(finetune_data_path, train_batch_size, collate_fn, shuffle):
     train_dataset = MQMDataset(finetune_data_path)
+    train_dataset.data = train_dataset.data.sample(1600)
     train_dataloader = torch.utils.data.DataLoader(
         dataset=train_dataset, batch_size=train_batch_size, collate_fn=collate_fn, shuffle=shuffle
     )
@@ -184,12 +191,7 @@ def get_finetune_dataset(train_batch_size, collate_fn, shuffle):
 def finetune(pruned_model, args, device):
     """Finetunes the model on WMT MQM evaluation dataset (news 2022 excluded).
     """
-    train_batch_size = 8
-    grad_accum_steps = 16
-    n_epochs = 1
-    warmup_fraction = 0.1
-
-    train_dataset, train_dataloader = get_finetune_dataset(train_batch_size, collate_fn=lambda x: x, shuffle=True)
+    train_dataset, train_dataloader = get_finetune_dataset(args.finetune_data_path, args.train_batch_size, collate_fn=lambda x: x, shuffle=True)
 
     # Prepare model
     def requires_grad_predicate(name):
@@ -205,12 +207,12 @@ def finetune(pruned_model, args, device):
     print(f"Total parameters: {sum(p.numel() for p in pruned_model.parameters()) / 1e6:0.2f} M")
     print(f"Trained parameters: {sum(p.numel() for p in pruned_model.parameters() if p.requires_grad) / 1e6:0.2f} M")
 
-    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=1e-4)
+    optimizer = torch.optim.AdamW([p for p in pruned_model.parameters() if p.requires_grad], lr=args.learning_rate)
 
     scheduler = CosineAnnealingLRWarmup(
         optimizer,
-        T_max=len(train_dataloader) * n_epochs // grad_accum_steps,
-        T_warmup=len(train_dataloader) * n_epochs * warmup_fraction // grad_accum_steps
+        T_max=len(train_dataloader) * args.n_epochs // args.grad_accum_steps,
+        T_warmup=len(train_dataloader) * args.n_epochs * args.warmup_fraction // args.grad_accum_steps
     )
 
     scaler = GradScaler()
@@ -226,10 +228,10 @@ def finetune(pruned_model, args, device):
 
     # Finetune
     losses = []
-    for epoch in range(n_epochs):
+    for epoch in range(args.n_epochs):
         losses.extend(
             train_one_epoch(pruned_model, optimizer, scheduler, train_dataloader, use_wandb=False,
-                grad_accum_steps=grad_accum_steps, device=device, scaler=scaler)
+                grad_accum_steps=args.grad_accum_steps, device=device, scaler=scaler)
         )
 
         # Save trained parameters
@@ -247,18 +249,21 @@ def load_pruned_tuned_model(args):
     """
     start = time.perf_counter()
     model = get_model(args, track_time=False)
-    finetune_output_path = Path(args.output) / "training"
 
-    if (finetune_output_path / "layers_to_prune.npy").exists():
-        layers_to_prune = set(np.load(finetune_output_path / "layers_to_prune.npy").tolist())
+    finetune_output_path = Path(args.output) / "training"
+    layers_to_prune_file = finetune_output_path / "layers_to_prune.npy"
+    tuned_params_file = finetune_output_path / f"tuned_params_{args.n_epochs}.pth"
+
+    if layers_to_prune_file.exists():
+        layers_to_prune = set(np.load(layers_to_prune_file).tolist())
         print(f"Found layers_to_prune.npy, pruning {layers_to_prune}.")
         prune_given_layers(model, layers_to_prune)
     else:
         print("Didn't find specific layers to prune, pruning n penultimate layers.")
-        prune_layers(model)
+        prune_layers(model, args.n_layers_to_prune)
     
-    if (finetune_output_path / "tuned_params.pth").exists():
-        tuned_params = torch.load(finetune_output_path / "tuned_params.pth")
+    if tuned_params_file.exists():
+        tuned_params = torch.load(tuned_params_file)
         print(f"N finetuned params found: {sum(p.numel() for p in tuned_params.values())}")
         model.load_state_dict(tuned_params, strict=False)
     else:
@@ -308,8 +313,8 @@ def main():
         model, model_load_time = get_model(args, track_time=True)
 
         if args.use_cosine_similarity:
-            _, calibration_loader = get_finetune_dataset(train_batch_size=8, collate_fn=lambda x: x, shuffle=True)
-            layers_to_prune = find_most_similar_blocks(model, calibration_loader, args.n_layers_to_prune, device)
+            _, calibration_loader = get_finetune_dataset(args.finetune_data_path, train_batch_size=args.train_batch_size, collate_fn=lambda x: x, shuffle=True)
+            layers_to_prune = find_most_similar_blocks(model, calibration_loader, args.n_layers_to_prune, args.n_calibration_batches, device)
             np.save(output_path / "layers_to_prune.npy", np.array(list(layers_to_prune)))
             prune_given_layers(model, layers_to_prune)
         else:

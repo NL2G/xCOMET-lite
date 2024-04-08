@@ -12,7 +12,7 @@ def main():
         all_language_pairs = ("en-de", "en-ru", "zh-en")
         other_language_pairs = ("en-de", "en-es", "en-zh")
         
-        output_name = f"{prefix}_summary.csv"
+        output_name = f"xxl-{prefix}_summary.csv"
 
         paths = [
             f"{results_dir_name}/{experiment_name}/evaluations/{prefix}/{language_pair}/report.json" 
