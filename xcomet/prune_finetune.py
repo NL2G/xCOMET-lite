@@ -120,6 +120,8 @@ def finetune(pruned_model, args, device):
 
     train_batch_size = 8
     grad_accum_steps = 16
+    n_epochs = 3
+    warmup_fraction = 0.1
     train_dataloader = torch.utils.data.DataLoader(
         dataset=train_dataset, batch_size=train_batch_size, collate_fn=lambda x: x, shuffle=True
     )
@@ -142,9 +144,11 @@ def finetune(pruned_model, args, device):
 
     scheduler = CosineAnnealingLRWarmup(
         optimizer,
-        T_max=len(train_dataloader) // grad_accum_steps,
-        T_warmup=len(train_dataloader) / 10 // grad_accum_steps
+        T_max=len(train_dataloader) * n_epochs // grad_accum_steps,
+        T_warmup=len(train_dataloader) * n_epochs * warmup_fraction // grad_accum_steps
     )
+
+    scaler = GradScaler()
 
     pruned_model.to(device)
     enable_gradient_checkpointing(pruned_model)
@@ -152,21 +156,26 @@ def finetune(pruned_model, args, device):
     pruned_model.word_level = False
     pruned_model.hparams.loss_lambda = 0
 
-    # Finetune
-    losses = train_one_epoch(pruned_model, optimizer, scheduler, train_dataloader, use_wandb=False,
-        grad_accum_steps=grad_accum_steps, device=device, scaler=GradScaler())
-    
-    # Save trained parameters
     finetune_output_path = Path(args.output) / "training"
     finetune_output_path.mkdir(parents=True, exist_ok=True)
-    torch.save(
-        {name: param.detach().cpu() for name, param in pruned_model.named_parameters() if param.requires_grad},
-        finetune_output_path / "tuned_params.pth"
-    )
-    np.save(finetune_output_path / "losses.npy", losses)
-    plt.plot(losses)
-    plt.title(args.output)
-    plt.savefig(finetune_output_path / "losses.png")
+
+    # Finetune
+    losses = []
+    for epoch in range(n_epochs):
+        losses.extend(
+            train_one_epoch(pruned_model, optimizer, scheduler, train_dataloader, use_wandb=False,
+                grad_accum_steps=grad_accum_steps, device=device, scaler=scaler)
+        )
+
+        # Save trained parameters
+        torch.save(
+            {name: param.detach().cpu() for name, param in pruned_model.named_parameters() if param.requires_grad},
+            finetune_output_path / f"tuned_params_{epoch + 1}.pth"
+        )
+        np.save(finetune_output_path / "losses.npy", losses)
+        plt.plot(losses)
+        plt.title(args.output)
+        plt.savefig(finetune_output_path / "losses.png")
 
 def load_pruned_tuned_model(args):
     """Loads a model, prunes the layers, and loads finetuned parameters if there is a corresponding checkpoint.
@@ -178,7 +187,8 @@ def load_pruned_tuned_model(args):
     
     finetune_output_path = Path(args.output) / "training"
     if finetune_output_path.exists():
-        tuned_params = torch.load(finetune_output_path / "tuned_params.pth")
+        # _3 is hardcoded, assuming n_epoch=3 during finetuning
+        tuned_params = torch.load(finetune_output_path / "tuned_params_3.pth")
         print(f"N tuned params groups found: {len(tuned_params)}")
         print(f"N tuned params found: {sum(p.numel() for p in tuned_params.values())}")
         model.load_state_dict(tuned_params, strict=False)
