@@ -182,7 +182,6 @@ def prune_given_layers(model, layers_to_prune: set[int], new_word_layer: Optiona
 
 def get_finetune_dataset(finetune_data_path, train_batch_size, collate_fn, shuffle):
     train_dataset = MQMDataset(finetune_data_path)
-    train_dataset.data = train_dataset.data.sample(1600)
     train_dataloader = torch.utils.data.DataLoader(
         dataset=train_dataset, batch_size=train_batch_size, collate_fn=collate_fn, shuffle=shuffle
     )
