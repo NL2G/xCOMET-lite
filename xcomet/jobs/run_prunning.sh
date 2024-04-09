@@ -7,23 +7,48 @@
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu_4_a100,gpu_4_h100,gpu_4,gpu_8
-#SBATCH --array=0-2
+#SBATCH --partition=gpu_4_a100,gpu_4_h100
+#SBATCH --array=0-14
 
 prune_layers_options=(
     0
+    0
+    0
+    4
     4
     8
+    8
+    12
     12
     16
+    16
+    16
+    20
+    20
     20
 )
-seeds=(
 
+seeds=(
+    0
+    1
+    2
+    1
+    2
+    1
+    2
+    1
+    2
+    0
+    1
+    2
+    0
+    1
+    2
 )
 
 n_layers_to_prune=${prune_layers_options[$SLURM_ARRAY_TASK_ID]}
-exp_name="prune-xxl-${n_layers_to_prune}-layers"
+seed=${seeds[$SLURM_ARRAY_TASK_ID]}
+exp_name="prune-xxl-${n_layers_to_prune}-layers-seed-${seed}"
 
 model="Unbabel/XCOMET-XXL"
 
@@ -33,6 +58,7 @@ python prune_finetune.py \
     --dataset RicardoRei/wmt-mqm-human-evaluation \
     --n-layers-to-prune $n_layers_to_prune \
     --model $model \
+    --seed $seed \
     --do-finetune
 
 for lp in "en-ru" "en-de" "zh-en"

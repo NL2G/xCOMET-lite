@@ -185,3 +185,4 @@ dsbs/data/dataset.jsonl.zst
 *spiece*
 data
 xcomet/distillation_results.tar.zst
+*.npy
