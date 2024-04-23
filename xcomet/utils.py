@@ -23,6 +23,23 @@ def load_tsv(path):
     data = data.drop(columns=["Unnamed: 0"])
     return data
 
+def print_summary(report: dict):
+    print("Dataset load time:", report.get("dataset_load_time"))
+    print("Model load time:", report.get("model_load_time"))
+    print("Prediction time:", report.get("prediction_time"), "\n")
+    print("Max memory:", report.get("peak_memory_mb"), "Mb")
+    print("Kendall correlation:", report.get("kendall_correlation"))
+
+def is_oom_exception(err: RuntimeError) -> bool:
+    return any(
+        x in str(err)
+        for x in [
+            'CUDA out of memory',
+            'CUBLAS_STATUS_ALLOC_FAILED',
+            'CUDA error: out of memory',
+        ]
+    )
+
 def get_length_grouped_indices(lengths, batch_size, mega_batch_mult=None, generator=None):
     """
     Return a list of indices so that each slice of `batch_size` consecutive indices correspond to elements of similar
