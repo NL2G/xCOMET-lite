@@ -83,7 +83,7 @@ class LengthGroupedSampler(Sampler):
                 batched=False,
                 num_proc=4,
             )
-            
+
         lengths = lengths['len']
 
         self.lengths = lengths
@@ -105,7 +105,7 @@ class CheckpointedXLMRobertaLayer(torch.nn.Module):
     def __init__(self, layer):
         super().__init__()
         self.layer = layer
-    
+
     # signature was taken from: https://github.com/huggingface/transformers/blob/main/src/transformers/models/xlm_roberta/modeling_xlm_roberta.py#L380
     def forward(
         self,
@@ -150,7 +150,7 @@ def _constant_warmup(iteration, warmup_iterations):
 
 def CosineAnnealingLRWarmup(optimizer, T_max, T_warmup):
     _decay_func = functools.partial(
-        _cosine_decay_warmup, 
+        _cosine_decay_warmup,
         warmup_iterations=T_warmup, total_iterations=T_max
     )
     scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
@@ -158,7 +158,7 @@ def CosineAnnealingLRWarmup(optimizer, T_max, T_warmup):
 
 def LinearWarmup(optimizer, T_warmup):
     _decay_func = functools.partial(
-        _constant_warmup, 
+        _constant_warmup,
         warmup_iterations=T_warmup
     )
     scheduler   = torch.optim.lr_scheduler.LambdaLR(optimizer, _decay_func)
