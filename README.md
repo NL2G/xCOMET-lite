@@ -25,6 +25,9 @@ pip install lightning==2.1.2 wandb
 
 # Visualization
 pip install jupyterlab==4.0.9
+
+# Onnx for speeding up
+pip install onnxruntime
 ```
 
 note: it gives 
