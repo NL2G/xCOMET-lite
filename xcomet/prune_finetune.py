@@ -197,6 +197,7 @@ def finetune(pruned_model, args, device):
         return "layerwise_attention.scalar_parameters" in name or \
             "estimator" in name or \
             "LayerNorm" in name or \
+            "hidden2tag" in name or \
             name.endswith("bias")
 
     for name, param in pruned_model.named_parameters():
