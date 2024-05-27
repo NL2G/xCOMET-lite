@@ -31,6 +31,7 @@ class OnnxModel:
         self,
         model_path: str,
         use_gpu: bool,
+        use_trt: bool,
         one_thread: bool
     ):
         sess_options = ort.SessionOptions()
@@ -41,6 +42,8 @@ class OnnxModel:
             sess_options.intra_op_num_threads = 1
         if use_gpu:
             providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            if use_trt:
+                providers=["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
         else:
             providers=['CPUExecutionProvider']
 
