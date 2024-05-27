@@ -264,24 +264,31 @@ def train_one_epoch(
             with autocast(device_type='cuda', dtype=torch.bfloat16):
                 output = model(**inputs)
 
-                # keep only logits corresponding to "mt" part of input, as we only predict error spans there
-                seq_len = target.mt_length.max()
-                output.logits = output.logits[:, :seq_len]
+                if model.word_level:
+                    # keep only logits corresponding to "mt" part of input, as we only predict error spans there
+                    seq_len = target.mt_length.max()
+                    output.logits = output.logits[:, :seq_len]
 
                 loss = loss + compute_loss(model, output, target)
 
         # Without this scaling we will have effective lr = lr * grad_accum_steps
-        scaler.scale((loss / grad_accum_steps)).backward()
+        if scaler is not None:
+            scaler.scale((loss / grad_accum_steps)).backward()
+        else:
+            (loss / grad_accum_steps).backward()
 
         if step % grad_accum_steps == 0:
-            scaler.step(optimizer)
-            scaler.update()
+            if scaler is not None:
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                optimizer.step()
             optimizer.zero_grad()
 
             if scheduler is not None:
                 scheduler.step()
 
-            losses.append(loss.item())
+            losses.append(loss.detach())
 
             if use_wandb:
                 wandb.log(
@@ -290,7 +297,7 @@ def train_one_epoch(
                     }
                 )
 
-    return losses
+    return [loss.item() for loss in losses]
 
 
 @torch.inference_mode()

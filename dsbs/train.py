@@ -70,7 +70,7 @@ def main(config_path: str, output_name: str = "model", seed: int = 42):
         save_total_limit=1, load_best_model_at_end=True,
         report_to="wandb", metric_for_best_model="accuracy#class",
         ddp_find_unused_parameters=False,
-        dataloader_num_workers=2
+        dataloader_num_workers=4
     )
 
     logging.info(f"Running with arguments: {arguments}")
