@@ -155,6 +155,12 @@ def parse_args():
         default=0.055,
         help="Weight assigned to the word-level loss",
     )
+    parser.add_argument(
+        "--subsample-pct",
+        type=float,
+        default=1.0,
+        help="Percentage of samples to use from the dataset",
+    )
 
     return parser.parse_args()
 
@@ -176,6 +182,7 @@ def get_datasets(args, track_time):
     start = time.perf_counter()
 
     train_dataset = load_dataset(args.train_dataset)["train"]
+    
 
     if ".csv" in args.val_dataset:
         val_dataset = MQMDataset(args.val_dataset)
@@ -371,6 +378,13 @@ def main():
     # Data
     logger.info("Loading datasets...")
     train_dataset, val_dataset, dataset_load_time = get_datasets(args, track_time=True)
+    if args.subsample_pct < 1.0:
+        logger.info(f"Subsampling train dataset to {args.subsample_pct * 100:.2f}%")
+        len_train = len(train_dataset)
+        subsampled_len = int(len_train * args.subsample_pct)
+        logger.info(f"Original train dataset length: {len_train}, subsampled length: {subsampled_len}")
+        train_dataset = train_dataset.select(range(subsampled_len))
+
     for d, part in zip((train_dataset, val_dataset), ("train", "val")):
         logger.info(str(part))
         logger.info(f"N samples: {len(d) if d is not None else 0}")
