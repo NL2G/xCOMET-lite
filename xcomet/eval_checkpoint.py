@@ -17,6 +17,7 @@ from scipy.stats import kendalltau
 import torch
 import torch.nn as nn
 from datasets import load_dataset
+from optimum.gptq import GPTQQuantizer
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
 from utils import load_json, dump_json, load_tsv
@@ -38,6 +39,7 @@ def make_parser():
     parser.add_argument("--word-layer", type=int, default=8, help="From which layer of encoder to predict word tags")
     parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
     parser.add_argument("--hidden-sizes", nargs="+", type=int, default=(3072, 1024), help="Size of hidden layers used in regression head")
+    parser.add_argument("--quantize-n-bits", type=int, default=0, help="Quantize model into N bits. Available options are 8, 4, 3, and 2 bits. 0 means no quantization.")
 
     return parser
 
@@ -95,6 +97,20 @@ def get_model(args, track_time):
         return model, model_load_time
     return model
 
+def quantize_model(model, nbits, calibration_dataset="wikitext2"):
+    print("Quantizing model...")
+    start = time.perf_counter()
+
+    if not hasattr(model.encoder.model.config, "use_cache"):
+        setattr(model.encoder.model.config, "use_cache", False)
+    # By default calibrates on c4 dataset, probably can do better with domain-specific dataset
+    # NOTE: due to this issue https://github.com/huggingface/transformers/issues/28490 we switch to wikitext2
+    quantizer = GPTQQuantizer(bits=nbits, dataset=calibration_dataset, block_name_to_quantize="encoder.layer", model_seqlen=512)
+    model.encoder.model = quantizer.quantize_model(model.encoder.model, model.encoder.tokenizer)
+    quantization_time = time.perf_counter() - start
+
+    return model, quantization_time
+
 
 def run_metric(model, dataset, args):
     print("Computing metric...")
@@ -118,7 +134,8 @@ def main():
     torch.cuda.manual_seed_all(args.seed)
 
 # Check for earlier launches
-    output_path = Path(args.output) / "evaluations" / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
+    eval_dir = "evaluations" if args.quantize_n_bits == 0 else f"evaluations_{args.quantize_n_bits}bits"
+    output_path = Path(args.output) / eval_dir / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
 
     if os.path.exists(output_path):
         print("Reusing previous results. Change output folder or delete this folder to recompute.")
@@ -138,6 +155,9 @@ def main():
     model, model_load_time = get_model(args, track_time=True)
     model.to(device)
 
+    if args.quantize_n_bits > 0:
+        model = quantize_model(model, args.quantize_n_bits)
+
     model_output, prediction_time = run_metric(model, dataset, args)
 
     segment_scores = np.array(model_output.scores)
@@ -148,6 +168,7 @@ def main():
     report = {
         "kendall_correlation": kendall_corr[0],
         "kendall_p_value": kendall_corr[1],
+        "samples_per_second": len(ground_truth) / prediction_time,
         "peak_memory_mb": peak_memory_mb,
         "system_level_score": model_output.system_score,
         "dataset_load_time": round(dataset_load_time, 2),
