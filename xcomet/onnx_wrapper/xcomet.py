@@ -31,19 +31,22 @@ class OnnxModel:
         self,
         model_path: str,
         use_gpu: bool,
+        use_trt: bool,
         one_thread: bool
     ):
         sess_options = ort.SessionOptions()
         torch.set_num_threads(1)
         os.environ['OMP_NUM_THREADS'] = '1'
-        if one_thread:
-            sess_options.inter_op_num_threads = 1
-            sess_options.intra_op_num_threads = 1
         if use_gpu:
             providers=['CUDAExecutionProvider', 'CPUExecutionProvider']
+            if use_trt:
+                providers=["TensorrtExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"]
         else:
             providers=['CPUExecutionProvider']
 
+        if one_thread:
+            sess_options.inter_op_num_threads = 1
+            sess_options.intra_op_num_threads = 1
         logger.info('Load ONNX model...')
         self.ort_session = ort.InferenceSession(model_path, sess_options, providers=providers)
 
@@ -79,9 +82,10 @@ class OnnxXCOMETModel(OnnxModel):
         onnx_model_path: str,
         xcomet_model: Union[comet.models.multitask.xcomet_metric.XCOMETMetric, str] = None,
         use_gpu: bool = False,
+        use_trt: bool = False,
         one_thread: bool = True
     ):
-        super().__init__(onnx_model_path, use_gpu, one_thread)
+        super().__init__(onnx_model_path, use_gpu, use_trt, one_thread)
 
         logger.info('Load xCOMET model')
         self.xcomet_model = xcomet_model

@@ -33,6 +33,7 @@ def make_parser():
     parser.add_argument("--year", type=int, default=2022, help="In which year to compute metrics")
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
     parser.add_argument("--gpu", action="store_true", help="Either use GPU or CPU. If GPU, use 0-th device - set CUDA_VISIBLE_DEVICES")
+    parser.add_argument("--trt", action="store_true", help="Either use TRT or general CUDA. Requires passing GPU flag")
     parser.add_argument("--half", action="store_true", default=False, help="Use fp16 precision")
     parser.add_argument("--batch-size", type=int, default=8, help="Fixed inference batch size. If set to 0, script automatically finds largest batch, which is a power of 2 and fits into current device.")
     parser.add_argument("--prune-n-layers", type=int, default=0, help="How many layers to prune")
@@ -132,7 +133,7 @@ def get_model(args, device):
         if not os.path.exists(args.onnx_path):
             xcomet_to_onnx(model, args.onnx_path)
         model = OnnxXCOMETMetric(
-            OnnxXCOMETModel(args.onnx_path, model, use_gpu=args.gpu)
+            OnnxXCOMETModel(args.onnx_path, model, use_gpu=args.gpu, use_trt=args.trt)
         )
     model_load_time = time.perf_counter() - start
     return model, model_load_time
