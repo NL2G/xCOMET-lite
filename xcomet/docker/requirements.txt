@@ -1,0 +1,14 @@
+numpy
+pandas
+scipy
+chardet
+tqdm
+datasets
+onnxruntime-gpu==1.18
+onnx==1.16.1
+unbabel-comet==2.2.2
+transformers
+sentencepiece
+optimum
+neural_compressor
+huggingface_hub
