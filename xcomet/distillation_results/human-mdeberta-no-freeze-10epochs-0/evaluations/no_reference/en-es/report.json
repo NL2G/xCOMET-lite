@@ -1,0 +1,34 @@
+{
+  "kendall_correlation": 0.20664064505636592,
+  "kendall_p_value": 1.2953333427039275e-35,
+  "peak_memory_mb": 1418,
+  "system_level_score": 0.9711439560127882,
+  "dataset_load_time": 0.07,
+  "model_load_time": 5.05,
+  "prediction_time": 7.45,
+  "dataset_length": 1834,
+  "output": "distillation_results/human-mdeberta-no-freeze-10epochs-0",
+  "lp": "en-es",
+  "dataset": "data/mt_en-es_ground_truth_cleaned_l.tsv",
+  "domain": "news",
+  "year": 2022,
+  "seed": 0,
+  "n_gpus": 1,
+  "batch_size": 8,
+  "encoder_model": "DeBERTa",
+  "pretrained_model": "microsoft/mdeberta-v3-base",
+  "word_layer": 8,
+  "word_level": true,
+  "hidden_sizes": [
+    3072,
+    1024
+  ],
+  "CUDA_VISIBLE_DEVICES": "0",
+  "torch.version.cuda": "12.1",
+  "torch.backends.cudnn.version()": 8902,
+  "torch.cuda.nccl.version()": [
+    2,
+    19,
+    3
+  ]
+}
