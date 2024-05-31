@@ -187,3 +187,5 @@ data
 xcomet/distillation_results.tar.zst
 *.npy
 git-filter-repo
+
+*.pth

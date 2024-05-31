@@ -130,7 +130,7 @@ def get_model(args, device):
         )
     else:
         if args.model.startswith('Unbabel/'):
-            model_path = download_model(args.model)
+            model_path = download_model(args.model, saving_directory="/gpfs/bwfor/work/ws/ma_dalarion-models")
         model = load_from_checkpoint(model_path)
 
     if args.prune_n_layers > 0:

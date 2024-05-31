@@ -1,0 +1,10 @@
+experiment_name,lp,kendall_correlation,peak_memory_mb,system_level_score,prediction_time,model_load_time,domain,year,setup
+synthplus-mdeberta-1epoch-0,en-de,0.4332057159863632,1411,0.9657533219822666,5.83,4.33,news,2022,no_reference
+synthplus-mdeberta-1epoch-0,en-es,0.3136657016693257,1418,0.8859447559815067,7.2,4.38,news,2022,no_reference
+synthplus-mdeberta-1epoch-0,en-zh,0.34209410501175314,1372,0.7830280975007887,4.78,4.25,news,2022,no_reference
+synthplus-mdeberta-1epoch-1,en-de,0.42803615986346105,1411,0.9500086968405205,5.68,4.34,news,2022,no_reference
+synthplus-mdeberta-1epoch-1,en-es,0.30845656691346707,1418,0.8740139919675424,7.21,4.5,news,2022,no_reference
+synthplus-mdeberta-1epoch-1,en-zh,0.3467234778050967,1372,0.7884802802383233,4.85,4.24,news,2022,no_reference
+synthplus-mdeberta-1epoch-2,en-de,0.42005399092991885,1411,0.9575448173179961,5.4,4.9,news,2022,no_reference
+synthplus-mdeberta-1epoch-2,en-es,0.31823157803875596,1418,0.8797495884977224,6.97,5.09,news,2022,no_reference
+synthplus-mdeberta-1epoch-2,en-zh,0.3604561463081694,1372,0.8063528054906416,4.63,4.65,news,2022,no_reference
