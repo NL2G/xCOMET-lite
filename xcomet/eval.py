@@ -3,6 +3,10 @@ import time
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Optional
+from deberta_encoder import DeBERTaEncoder
+import comet.encoders
+
+comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
 
 import torch
 import numpy as np
@@ -11,6 +15,8 @@ from datasets import load_dataset
 from scipy.stats import kendalltau
 from comet import download_model, load_from_checkpoint
 from optimum.gptq import GPTQQuantizer
+from comet.models.multitask.xcomet_metric import XCOMETMetric
+
 
 from inference.utils import (
     load_json, dump_json, load_tsv,
@@ -109,9 +115,23 @@ def get_model(args, device):
     start = time.perf_counter()
 
     model_path = args.model
-    if args.model.startswith('Unbabel/'):
-        model_path = download_model(args.model)
-    model = load_from_checkpoint(model_path)
+    if model_path == "mdeberta":
+        model = XCOMETMetric(
+            encoder_model='DeBERTa',
+            pretrained_model='microsoft/mdeberta-v3-base',
+            word_layer=8,
+            validation_data=[],
+            word_level_training=True,
+            hidden_sizes=[
+                3072,
+                1024
+            ],
+            load_pretrained_weights=False,
+        )
+    else:
+        if args.model.startswith('Unbabel/'):
+            model_path = download_model(args.model)
+        model = load_from_checkpoint(model_path)
 
     if args.prune_n_layers > 0:
         model = prune_layers(model, args.prune_n_layers)
