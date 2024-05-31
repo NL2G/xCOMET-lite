@@ -1,0 +1,46 @@
+activations: Tanh
+batch_size: 4
+class_identifier: xcomet_metric
+cross_entropy_weights:
+- 0.08
+- 0.486
+- 0.505
+- 0.533
+dropout: 0.1
+encoder_learning_rate: 1.0e-06
+encoder_model: XLM-RoBERTa-XL
+error_labels:
+- minor
+- major
+- critical
+final_activation: null
+hidden_sizes:
+- 2560
+- 1280
+input_segments:
+- mt
+- src
+- ref
+keep_embeddings_frozen: true
+layer: mix
+layer_norm: false
+layer_transformation: sparsemax
+layerwise_decay: 0.983
+learning_rate: 3.66e-06
+load_pretrained_weights: true
+loss: mse
+loss_lambda: 0.055
+nr_frozen_epochs: 0.3
+optimizer: AdamW
+pool: avg
+pretrained_model: facebook/xlm-roberta-xl
+sent_layer: mix
+train_data:
+- /mnt/data/ricardorei/COMET/data/news20_train_annotations_new.jsonl
+validation_data:
+- /mnt/data/ricardorei/COMET/data/devset/mqm/en-de/news_google.jsonl
+- /mnt/data/ricardorei/COMET/data/devset/mqm/en-ru/news_google.jsonl
+- /mnt/data/ricardorei/COMET/data/devset/mqm/zh-en/news_google.jsonl
+warmup_steps: 0
+word_layer: 36
+word_level_training: true

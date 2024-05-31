@@ -1,0 +1,42 @@
+{
+  "peak_memory_mb": 12366,
+  "dataset_load_time": 2.01,
+  "model_load_time": 5.1,
+  "train_time": 24509.65,
+  "train_dataset_length": 150484,
+  "train_src_kendall_correlation": 0.35638263621965244,
+  "train_ref_kendall_correlation": 0.379292905049284,
+  "train_full_kendall_correlation": 0.37912926036506533,
+  "train_src_tag_accuracy": 0.4920150339603424,
+  "train_ref_tag_accuracy": 0.4920150339603424,
+  "train_full_tag_accuracy": 0.4920150339603424,
+  "output": "distillation_results/longer_unfrozen2",
+  "seed": 0,
+  "n_gpus": 1,
+  "batch_size": 8,
+  "grad_accum_steps": 2,
+  "n_epochs": 15,
+  "use_wandb": true,
+  "wandb_project_name": "xcomet-compression",
+  "nr_frozen_epochs": 0.85,
+  "encoder_lr": 1e-06,
+  "lr": 3.66e-06,
+  "layerwise_decay": 0.983,
+  "encoder_model": "MiniLM",
+  "pretrained_model": "microsoft/Multilingual-MiniLM-L12-H384",
+  "word_layer": 8,
+  "word_level": true,
+  "hidden_sizes": [
+    3072,
+    1024
+  ],
+  "loss_lambda": 0.055,
+  "CUDA_VISIBLE_DEVICES": "0",
+  "torch.version.cuda": "11.8",
+  "torch.backends.cudnn.version()": 8700,
+  "torch.cuda.nccl.version()": [
+    2,
+    18,
+    6
+  ]
+}

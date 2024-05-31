@@ -1,0 +1,29 @@
+{
+  "kendall_correlation": 0.3691982487947136,
+  "kendall_p_value": 0.0,
+  "peak_memory_mb": 6657,
+  "system_level_score": 0.697150886184705,
+  "dataset_load_time": 8.91,
+  "model_load_time": 55.63,
+  "prediction_time": 245.07,
+  "dataset_length": 7575,
+  "output": "pruning_results/prune8layers/",
+  "lp": "zh-en",
+  "dataset": "RicardoRei/wmt-mqm-human-evaluation",
+  "domain": "news",
+  "year": 2022,
+  "seed": 0,
+  "n_gpus": 1,
+  "batch_size": 8,
+  "n_layers_to_prune": 8,
+  "do_finetune": false,
+  "model": "Unbabel/XCOMET-XL",
+  "CUDA_VISIBLE_DEVICES": "3",
+  "torch.version.cuda": "11.8",
+  "torch.backends.cudnn.version()": 8700,
+  "torch.cuda.nccl.version()": [
+    2,
+    18,
+    6
+  ]
+}

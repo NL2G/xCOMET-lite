@@ -1,0 +1,26 @@
+misc:
+    model_name: "debug"
+    base_model_name: "google/mt5-small"
+    kind: "2way"
+    alpha1: 0.5
+    alpha2: 0.25
+    dataset: "./data/dataset.jsonl.zst"
+    preprocessed_dataset_prefix: "/pfs/work7/workspace/scratch/ma_dalarion-data-cache/dataset"
+    dev_size: 0.01125
+    subsample: false
+    seed: 0
+
+batch:
+    train_size: 16
+    eval_size: 128
+    accumulation: 4
+
+train:
+    lr: 5e-5
+    weight_decay: 0.1
+    max_grad_norm: 1.0
+    max_steps: 60000
+    eval_steps: 3000
+    optim: "adamw_bnb_8bit"
+    lr_scheduler: "cosine"
+    warmup_ratio: 0.1
