@@ -7,8 +7,8 @@
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --partition=gpu_4_a100,gpu_4_h100
-#SBATCH --array=0-14
+#SBATCH --partition=single
+#SBATCH --array=0-17
 
 prune_layers_options=(
     0
@@ -16,8 +16,11 @@ prune_layers_options=(
     0
     4
     4
+    4
     8
     8
+    8
+    12
     12
     12
     16
@@ -32,10 +35,13 @@ seeds=(
     0
     1
     2
+    0
     1
     2
+    0
     1
     2
+    0
     1
     2
     0
