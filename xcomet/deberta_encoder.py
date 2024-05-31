@@ -1,11 +1,51 @@
+from typing import Optional
+
+import torch
+from torch import nn
+import transformers as tr
+
 from comet.encoders.base import Encoder
 from comet.encoders.bert import BERTEncoder
-import transformers as tr
-import torch
+
+from transformers.models.deberta_v2.modeling_deberta_v2 import DebertaV2Layer
+
+class DebertaV2LayerPatched(DebertaV2Layer):
+    """
+    Just like DeBERTaV2Layer, but handles the situation when attention_mask=None by creating a trivial attention mask of all ones.
+    """
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        query_states=None,
+        relative_pos=None,
+        rel_embeddings=None,
+        output_attentions=False,
+    ):
+        # Handling empty attention_mask:
+        if attention_mask is None:
+            attention_mask = torch.ones(*hidden_states.shape[:-1]).to(hidden_states.device)
+
+        # Everything else is the same:
+        attention_output = self.attention(
+            hidden_states,
+            attention_mask,
+            output_attentions=output_attentions,
+            query_states=query_states,
+            relative_pos=relative_pos,
+            rel_embeddings=rel_embeddings,
+        )
+        if output_attentions:
+            attention_output, att_matrix = attention_output
+        intermediate_output = self.intermediate(attention_output)
+        layer_output = self.output(intermediate_output, attention_output)
+        if output_attentions:
+            return (layer_output, att_matrix)
+        else:
+            return layer_output
 
 
 class DeBERTaEncoder(BERTEncoder):
-
     def __init__(
         self, pretrained_model: str, load_pretrained_weights: bool = True
     ) -> None:
@@ -20,6 +60,11 @@ class DeBERTaEncoder(BERTEncoder):
                 tr.AutoConfig.from_pretrained(pretrained_model),
             )
         self.model.encoder.output_hidden_states = True
+
+        self.model.encoder.layer = nn.ModuleList(
+            [DebertaV2LayerPatched(tr.AutoConfig.from_pretrained(pretrained_model))
+            for _ in range(self.model.config.num_hidden_layers)]
+        )
 
     @property
     def size_separator(self):
@@ -43,16 +88,19 @@ class DeBERTaEncoder(BERTEncoder):
                 from Hugging Face
 
         Returns:
-            Encoder: XLMREncoder object.
+            Encoder: DeBERTaEncoder object.
         """
         return DeBERTaEncoder(pretrained_model, load_pretrained_weights)
 
     def forward(
         self,
         input_ids: torch.Tensor, 
-        attention_mask: torch.Tensor, 
+        attention_mask: Optional[torch.Tensor] = None,
         **kwargs
     ) -> dict[str, torch.Tensor]:
+        if attention_mask is None:
+            attention_mask = torch.ones_like(input_ids)
+
         model_output = self.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
