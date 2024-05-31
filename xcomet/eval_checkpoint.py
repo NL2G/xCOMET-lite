@@ -120,9 +120,9 @@ def main():
 # Check for earlier launches
     output_path = Path(args.output) / "evaluations" / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
 
-    if os.path.exists(output_path):
-        print("Reusing previous results. Change output folder or delete this folder to recompute.")
-        return
+    #if os.path.exists(output_path):
+    #    print("Reusing previous results. Change output folder or delete this folder to recompute.")
+    #    return
 
 # Start logic
 
