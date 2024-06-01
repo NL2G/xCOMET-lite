@@ -47,7 +47,7 @@ def make_parser():
     parser.add_argument("--half", action="store_true", default=False, help="Use fp16 precision")
     parser.add_argument("--batch-size", type=int, default=8, help="Fixed inference batch size. If set to 0, script automatically finds largest batch, which is a power of 2 and fits into current device.")
     parser.add_argument("--prune-n-layers", type=int, default=0, help="How many layers to prune")
-    parser.add_argument("--quantization-type", choices=["gptq", "dint8"], help="Choose the quantization method")
+    parser.add_argument("--quantization-type", choices=["gptq", "bnb"], help="Choose the quantization method")
     parser.add_argument("--quantize-n-bits", type=int, default=0, choices=[2, 3, 4, 8], help="Quantize model into N bits. 0 means no quantization.")
 
     return parser
