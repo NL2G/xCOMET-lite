@@ -1,5 +1,7 @@
 import os
 import time
+import tempfile
+from functools import partial
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Optional
@@ -17,10 +19,12 @@ from comet import download_model, load_from_checkpoint
 from optimum.gptq import GPTQQuantizer
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
+from bitsandbytes.nn import Linear8bitLt, Linear4bit
 
 from inference.utils import (
-    load_json, dump_json, load_tsv,
-    find_max_bs
+    dump_json, load_tsv,
+    find_max_bs,
+    rgetattr, rsetattr
 )
 
 from onnx_wrapper.xcomet import OnnxXCOMETMetric, OnnxXCOMETModel
@@ -43,7 +47,8 @@ def make_parser():
     parser.add_argument("--half", action="store_true", default=False, help="Use fp16 precision")
     parser.add_argument("--batch-size", type=int, default=8, help="Fixed inference batch size. If set to 0, script automatically finds largest batch, which is a power of 2 and fits into current device.")
     parser.add_argument("--prune-n-layers", type=int, default=0, help="How many layers to prune")
-    parser.add_argument("--quantize-n-bits", type=int, default=0, help="Quantize model into N bits. Available options are 8, 4, 3, and 2 bits. 0 means no quantization.")
+    parser.add_argument("--quantization-type", choices=["gptq", "dint8"], help="Choose the quantization method")
+    parser.add_argument("--quantize-n-bits", type=int, default=0, choices=[2, 3, 4, 8], help="Quantize model into N bits. 0 means no quantization.")
 
     return parser
 
@@ -81,7 +86,7 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
     """Implements simple layer pruning heuristic as described in https://arxiv.org/abs/2403.17887v1.
     Prunes n layers, starting from a penultimate layer.
     """
-    print(f"Pruning {n_layers_to_prune} layers...")
+    logger.info(f"Pruning {n_layers_to_prune} layers...")
     model.encoder.model.encoder.layer = model.encoder.model.encoder.layer[:-(1 + n_layers_to_prune)] + \
         model.encoder.model.encoder.layer[-1:]
     model.encoder.model.config.num_hidden_layers = model.encoder.model.config.num_hidden_layers - n_layers_to_prune
@@ -99,8 +104,18 @@ def prune_layers(model, n_layers_to_prune: int, new_word_layer: Optional[int] = 
 
     return model
 
-def quantize_model(model, nbits, calibration_dataset="wikitext2"):
-    print("Quantizing model...")
+def quantize_model(qtype, model, nbits):
+    if nbits == 0:
+        return model, 0
+    logger.info(f"Quantizing model with {qtype}...")
+    if qtype == "gptq":
+        return quantize_model_gptq(model, nbits)
+    elif qtype == "dint8":
+        return quantize_model_bnb(model, nbits)
+
+def quantize_model_gptq(model, nbits, calibration_dataset="wikitext2"):
+    if nbits == 0:
+        return model, 0
     start = time.perf_counter()
     # By default calibrates on c4 dataset, probably can do better with domain-specific dataset
     # NOTE: due to this issue https://github.com/huggingface/transformers/issues/28490 we switch to wikitext2
@@ -108,6 +123,24 @@ def quantize_model(model, nbits, calibration_dataset="wikitext2"):
     model.encoder.model = quantizer.quantize_model(model.encoder.model, model.encoder.tokenizer)
     quantization_time = time.perf_counter() - start
 
+    return model, quantization_time
+
+def quantize_model_bnb(model, nbits):
+    assert nbits in [4, 8], "BNB supports 8-bit LLM.int8() and 4-bit QLoRA"
+    qlayer = partial(Linear8bitLt, has_fp16_weights=False) if nbits == 8 else Linear4bit
+    ckpt_path = next(tempfile._get_candidate_names())
+    torch.save(model.state_dict(), ckpt_path)
+    for name, layer in model.named_modules():
+        if isinstance(layer, torch.nn.Linear):
+            rsetattr(
+                model, name,
+                qlayer(*rgetattr(model, name).weight.shape[::-1])
+            )
+    start = time.perf_counter()
+    model.load_state_dict(torch.load(ckpt_path))
+    quantization_time = time.perf_counter() - start
+
+    os.remove(ckpt_path)
     return model, quantization_time
 
 def get_model(args, device):
@@ -130,7 +163,7 @@ def get_model(args, device):
         )
     else:
         if args.model.startswith('Unbabel/'):
-            model_path = download_model(args.model, saving_directory="/gpfs/bwfor/work/ws/ma_dalarion-models")
+            model_path = download_model(args.model)#, saving_directory="/gpfs/bwfor/work/ws/ma_dalarion-models")
         model = load_from_checkpoint(model_path)
 
     if args.prune_n_layers > 0:
@@ -139,12 +172,11 @@ def get_model(args, device):
     if args.half:
         assert args.onnx_path is None
         model = model.half()
-    elif args.quantize_n_bits > 0:
-        assert not args.half, "At most one of --half and --quantize-n-bits must be specified"
-        available_bitwidths = (2, 3, 4, 8)
-        assert args.quantize_n_bits in available_bitwidths, f"Can only quantize into {available_bitwidths} bits"
-        #model.to(device)
-        model, _ = quantize_model(model, args.quantize_n_bits)
+    elif args.quantization_type is not None:
+        # assert not args.half, "At most one of --half and --quantize-n-bits must be specified"
+        # assert args.quantize_n_bits in available_bitwidths, f"Can only quantize into {available_bitwidths} bits"
+        # model.to(device)
+        model, _ = quantize_model(args.quantization_type, model, args.quantize_n_bits)
 
     model.eval()
 
