@@ -110,7 +110,7 @@ def quantize_model(qtype, model, nbits):
     logger.info(f"Quantizing model with {qtype}...")
     if qtype == "gptq":
         return quantize_model_gptq(model, nbits)
-    elif qtype == "dint8":
+    elif qtype == "bnb":
         return quantize_model_bnb(model, nbits)
 
 def quantize_model_gptq(model, nbits, calibration_dataset="wikitext2"):
