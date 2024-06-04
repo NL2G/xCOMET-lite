@@ -7,6 +7,7 @@ import torch
 import gc
 import time
 import logging
+import functools
 
 
 logger = logging
@@ -70,3 +71,12 @@ def find_max_bs(model, vocab_size, device, n_iter=10, max_length=512):
     torch.cuda.empty_cache()
     gc.collect()
     return (b_sz, throughput, peak_memory // 2 ** 20)
+
+def rsetattr(obj, attr, val):
+    pre, _, post = attr.rpartition('.')
+    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
+def rgetattr(obj, attr, *args):
+    def _getattr(obj, attr):
+        return getattr(obj, attr, *args)
+    return functools.reduce(_getattr, [obj] + attr.split('.'))
