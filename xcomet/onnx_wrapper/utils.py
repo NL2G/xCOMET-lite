@@ -35,7 +35,7 @@ def to_onnx(
         do_constant_folding=True,
         opset_version=17,
     )
-    logger.info(f'Exporting is done in {np.round(time.perf_counter()-start, 2)} s')
+    logger.info(f'Exporting is done in {np.round(time.perf_counter()-start, 2)} seconds')
 
 
 def xcomet_to_onnx(
