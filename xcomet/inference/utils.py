@@ -66,8 +66,9 @@ def find_max_bs(model, vocab_size, device, n_iter=10, max_length=512):
             break
         b_sz <<= 1
     logger.info(f"Results: {b_sz} points per batch, {peak_memory // 2 ** 20} peak memory, {throughput} samples per s")
-    if isinstance(model, torch.nn.Module):
-        model = model.to("cpu")
+    # NOTE: for BNB quantization it is obligatory to keep a model on device, otherwise the quantization statistics would be broken
+    # if isinstance(model, torch.nn.Module):
+    #     model = model.to("cpu")
     torch.cuda.empty_cache()
     gc.collect()
     return (b_sz, throughput, peak_memory // 2 ** 20)
