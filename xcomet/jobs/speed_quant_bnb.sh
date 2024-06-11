@@ -49,7 +49,7 @@ no_ref_language=(
 n_bits=${n_bits_options[$SLURM_ARRAY_TASK_ID]}
 with_ref=${with_ref_language[$SLURM_ARRAY_TASK_ID]}
 no_ref=${no_ref_language[$SLURM_ARRAY_TASK_ID]}
-output=${root_exp_dir}/a100_xl_truebnb_${n_bits}bits
+output=${root_exp_dir}/a100_xl_halfbnb_${n_bits}bits
 
 echo "Running ${with_ref} and ${no_ref} with ${n_bits} bits"
 
@@ -60,6 +60,7 @@ python ${script_name} \
     --dataset RicardoRei/wmt-mqm-human-evaluation \
     --model ${model} \
     --gpu \
+    --half \
     --quantization-type bnb \
     --quantize-n-bits ${n_bits} \
     --batch-size 0
@@ -71,6 +72,7 @@ python ${script_name} \
     --dataset data/mt_${no_ref}_ground_truth_cleaned_l.tsv \
     --model ${model} \
     --gpu \
+    --half \
     --quantization-type bnb \
     --quantize-n-bits ${n_bits} \
     --batch-size 0
