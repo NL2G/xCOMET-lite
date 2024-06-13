@@ -7,8 +7,8 @@
 #SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --partition=single
-#SBATCH --array=0-17
+#SBATCH --partition=gpu_4_a100,gpu_4_h100,gpu_8,gpu_4
+#SBATCH --array=0-14
 
 prune_layers_options=(
     0
@@ -54,9 +54,9 @@ seeds=(
 
 n_layers_to_prune=${prune_layers_options[$SLURM_ARRAY_TASK_ID]}
 seed=${seeds[$SLURM_ARRAY_TASK_ID]}
-exp_name="prune-xxl-${n_layers_to_prune}-layers-seed-${seed}"
+exp_name="prune-xl-${n_layers_to_prune}-layers-seed-${seed}"
 
-model="Unbabel/XCOMET-XXL"
+model="Unbabel/XCOMET-XL"
 
 python prune_finetune.py \
     -o pruning_results/$exp_name/ \

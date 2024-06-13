@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import comet
 from torch.cuda.amp import GradScaler
+from comet.models.multitask.xcomet_metric import XCOMETMetric
 from datasets import load_dataset
 
 from source.mqm_dataset import MQMDataset

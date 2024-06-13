@@ -137,9 +137,9 @@ def main():
     eval_dir = "evaluations" if args.quantize_n_bits == 0 else f"evaluations_{args.quantize_n_bits}bits"
     output_path = Path(args.output) / eval_dir / ("no_reference" if args.dataset.endswith(".tsv") else "with_reference") / args.lp
 
-    if os.path.exists(output_path):
-        print("Reusing previous results. Change output folder or delete this folder to recompute.")
-        return
+    #if os.path.exists(output_path):
+    #    print("Reusing previous results. Change output folder or delete this folder to recompute.")
+    #    return
 
 # Start logic
 
