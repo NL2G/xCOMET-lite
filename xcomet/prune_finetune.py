@@ -9,6 +9,7 @@ from deberta_encoder import DeBERTaEncoder
 import comet.encoders
 
 comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
+from comet.models.multitask.xcomet_metric import XCOMETMetric
 
 import wandb
 import numpy as np
@@ -48,6 +49,15 @@ def make_parser():
     parser.add_argument("--warmup-fraction", type=float, default=0.1, help="Relative length of linear warmup stage in cosine learning rate schedule during finetuning")
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Learning rate for finetuning")
     parser.add_argument("--n-calibration-batches", type=int, default=2000, help="Amount of batches (of train_batch_size size) used to estimate block similarity/importances")
+    parser.add_argument("--enable-gradient-checkpointing", action="store_true", help="Enables gradient checkpointing for XCOMET-XL or XCOMET-XXL. Does not work with other models.")
+
+    parser.add_argument("--encoder-model", default="DeBERTa", help="Backbone family [BERT, XLM-RoBERTa, MiniLM, XLM-RoBERTa-XL, RemBERT]",)
+    parser.add_argument("--pretrained-model", default="microsoft/mdeberta-v3-base", help="Concrete pretrained checkpoint for the backbone (huggingface name)")
+    parser.add_argument("--word-layer", type=int, default=8, help="From which layer of encoder to predict word tags")
+    parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
+    parser.add_argument("--hidden-sizes", nargs="+", type=int, default=(3072, 1024), help="Size of hidden layers used in regression head",)
+    parser.add_argument("--loss-lambda", type=float, default=0.055, help="Weight assigned to the word-level loss",)
+    parser.add_argument("--checkpoint-path", default="", help="[Optional] Path to a checkpoint with finetuned model weights.")
 
     parser.add_argument(
         "--use-cosine-similarity",
@@ -93,8 +103,23 @@ def get_dataset(args, track_time):
 
 def get_model(args, track_time):
     start = time.perf_counter()
-    model_path = comet.download_model(args.model)
-    model = comet.load_from_checkpoint(model_path)
+
+    if "Unbabel/XCOMET" in args.model:
+        model_path = comet.download_model(args.model)
+        model = comet.load_from_checkpoint(model_path)
+    else:
+        model = XCOMETMetric(
+            encoder_model=args.encoder_model,
+            pretrained_model=args.pretrained_model,
+            word_layer=args.word_layer,
+            validation_data=[],
+            word_level_training=args.word_level,
+            hidden_sizes=args.hidden_sizes,
+            loss_lambda=args.loss_lambda,
+        )
+
+    if args.checkpoint_path:
+        model.load_state_dict(torch.load(args.checkpoint_path))
 
     model_load_time = time.perf_counter() - start
 
@@ -218,7 +243,8 @@ def finetune(pruned_model, args, device):
     scaler = GradScaler()
 
     pruned_model.to(device)
-    enable_gradient_checkpointing(pruned_model)
+    if args.enable_gradient_checkpointing:
+        enable_gradient_checkpointing(pruned_model)
 
     pruned_model.word_level = False
     pruned_model.hparams.loss_lambda = 0
