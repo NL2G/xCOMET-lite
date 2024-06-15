@@ -1,5 +1,5 @@
-# efficient-llm-metrics
-Efficient &amp; Open LLM-based metrics for NLG tasks
+# xCOMET-lite
+Efficient Learned metrics for NLG tasks
 
 
 ## xcomet
