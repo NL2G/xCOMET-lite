@@ -96,7 +96,7 @@ def get_model(args, track_time):
     start = time.perf_counter()
 
     if args.model.startswith("Unbabel/"):
-        model_path = comet.download_model(args.model, saving_directory='/gpfs/bwfor/work/ws/ma_dalarion-models')
+        model_path = comet.download_model(args.model)
         model = comet.load_from_checkpoint(model_path)
     else:
         model = XCOMETMetric(
