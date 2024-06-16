@@ -128,7 +128,7 @@ def quantize_model_gptq(model, nbits, calibration_dataset="wikitext2"):
 def quantize_model_bnb(model, nbits):
     assert nbits in [4, 8], "BNB supports 8-bit LLM.int8() and 4-bit QLoRA"
     qlayer = partial(Linear8bitLt, has_fp16_weights=False) if nbits == 8 else Linear4bit
-    ckpt_path = next(tempfile._get_candidate_names())
+    _, ckpt_path = tempfile.mkstemp(suffix=".pth", dir=tempfile.gettempdir())
     torch.save(model.state_dict(), ckpt_path)
     for name, layer in model.named_modules():
         if isinstance(layer, torch.nn.Linear):
