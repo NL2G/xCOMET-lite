@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import comet
 from torch.cuda.amp import GradScaler
+from comet.models.multitask.xcomet_metric import XCOMETMetric
 from datasets import load_dataset
 
 from source.mqm_dataset import MQMDataset
@@ -93,8 +94,23 @@ def get_dataset(args, track_time):
 
 def get_model(args, track_time):
     start = time.perf_counter()
-    model_path = comet.download_model(args.model)
-    model = comet.load_from_checkpoint(model_path)
+
+    if args.model.startswith("Unbabel/"):
+        model_path = comet.download_model(args.model, saving_directory='/gpfs/bwfor/work/ws/ma_dalarion-models')
+        model = comet.load_from_checkpoint(model_path)
+    else:
+        model = XCOMETMetric(
+            encoder_model='DeBERTa',
+            pretrained_model='microsoft/mdeberta-v3-base',
+            word_layer=8,
+            validation_data=[],
+            word_level_training=True,
+            hidden_sizes=[
+                3072,
+                1024
+            ]
+        )
+        model.load_state_dict(torch.load(args.model))
 
     model_load_time = time.perf_counter() - start
 

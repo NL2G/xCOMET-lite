@@ -1,0 +1,11 @@
+chardet
+transformers
+sentencepiece
+datasets
+evaluate
+huggingface_hub
+bitsandbytes
+optimum
+onnxruntime
+onnx
+unbabel-comet==2.2.2

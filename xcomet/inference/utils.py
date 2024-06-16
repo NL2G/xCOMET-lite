@@ -7,6 +7,7 @@ import torch
 import gc
 import time
 import logging
+import functools
 
 
 logger = logging
@@ -65,8 +66,18 @@ def find_max_bs(model, vocab_size, device, n_iter=10, max_length=512):
             break
         b_sz <<= 1
     logger.info(f"Results: {b_sz} points per batch, {peak_memory // 2 ** 20} peak memory, {throughput} samples per s")
-    if isinstance(model, torch.nn.Module):
-        model = model.to("cpu")
+    # NOTE: for BNB quantization it is obligatory to keep a model on device, otherwise the quantization statistics would be broken
+    # if isinstance(model, torch.nn.Module):
+    #     model = model.to("cpu")
     torch.cuda.empty_cache()
     gc.collect()
     return (b_sz, throughput, peak_memory // 2 ** 20)
+
+def rsetattr(obj, attr, val):
+    pre, _, post = attr.rpartition('.')
+    return setattr(rgetattr(obj, pre) if pre else obj, post, val)
+
+def rgetattr(obj, attr, *args):
+    def _getattr(obj, attr):
+        return getattr(obj, attr, *args)
+    return functools.reduce(_getattr, [obj] + attr.split('.'))

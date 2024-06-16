@@ -12,3 +12,4 @@ sentencepiece
 optimum
 neural_compressor
 huggingface_hub
+onnxconverter_common
