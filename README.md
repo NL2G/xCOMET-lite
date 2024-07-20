@@ -1,4 +1,4 @@
-# xCOMET-lite
+# [xCOMET-lite](https://arxiv.org/abs/2406.14553)
 Efficient Learned metrics for NLG tasks
 
 
