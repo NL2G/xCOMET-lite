@@ -341,6 +341,7 @@ def main():
         model, model_load_time = get_model(args, track_time=True)
 
         if args.use_wanda:
+            model.seqlen = 512
             prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
             print("sparsity sanity check:", check_sparsity(model))
         elif args.use_cosine_similarity:
