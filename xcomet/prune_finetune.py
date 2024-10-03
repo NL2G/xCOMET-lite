@@ -27,7 +27,7 @@ from datasets import load_dataset
 from source.mqm_dataset import MQMDataset
 from train import train_one_epoch, prepare_sample, compute_loss
 from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup
-from wanda_lib.prune import prune_wanda, check_sparsity
+from wanda_lib.prune import prune_wanda, check_sparsity, prune_magnitude
 
 def make_parser():
     parser = ArgumentParser(description="MQM evaluation.")
@@ -57,6 +57,8 @@ def make_parser():
         help="If chosen, pruned layers are chosen based by average cosine similarity of their inputs and outputs;" + \
             " otherwise n penultimate layers are pruned. Not recommended for now."
     )
+
+    parser.add_argument("--use-magnitude-pruning", action="store_true", help="Use simple magnitude pruning.")
 
     parser.add_argument("--use-wanda", action="store_true", help="Use Wanda pruning method instead of layer pruning.")
     parser.add_argument("--nsamples", default=256, help="Number of calibration samples used for Wanda pruning.")
@@ -269,7 +271,7 @@ def finetune(pruned_model, args, device):
         plt.savefig(finetune_output_path / "losses.png")
 
 def load_pruned_tuned_model(args):
-    """Loads a model, prunes the layers, and loads finetuned parameters if there is a corresponding checkpoint.
+    """Loads a model, prunes it and loads finetuned parameters if there is a corresponding checkpoint.
     """
     start = time.perf_counter()
     model = get_model(args, track_time=False)
@@ -278,17 +280,21 @@ def load_pruned_tuned_model(args):
     layers_to_prune_file = finetune_output_path / "layers_to_prune.npy"
     tuned_params_file = finetune_output_path / f"tuned_params_{args.n_epochs}.pth"
 
-    if args.use_wanda:
-        model.seqlen = 512
-        prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
-        print("sparsity sanity check:", check_sparsity(model))
-    elif layers_to_prune_file.exists():
+    if layers_to_prune_file.exists():
         layers_to_prune = set(np.load(layers_to_prune_file).tolist())
         print(f"Found layers_to_prune.npy, pruning {layers_to_prune}.")
         prune_given_layers(model, layers_to_prune)
     else:
         print("Didn't find specific layers to prune, pruning n penultimate layers.")
         prune_layers(model, args.n_layers_to_prune)
+
+    if args.use_wanda:
+        model.seqlen = 512
+        prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+        print("sparsity sanity check:", check_sparsity(model))
+    elif args.use_magnitude_pruning:
+        prune_magnitude(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+        print("sparsity sanity check:", check_sparsity(model))
 
     if tuned_params_file.exists():
         tuned_params = torch.load(tuned_params_file)
@@ -313,6 +319,7 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
     print(args)
+    assert not (args.use_wanda and args.use_magnitude_pruning), "Can't use Wanda and magnitude pruning at the same time" 
 
 # Setup environment
     torch.set_float32_matmul_precision("medium")
@@ -343,6 +350,9 @@ def main():
         if args.use_wanda:
             model.seqlen = 512
             prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+            print("sparsity sanity check:", check_sparsity(model))
+        elif args.use_magnitude_pruning:
+            prune_magnitude(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
             print("sparsity sanity check:", check_sparsity(model))
         elif args.use_cosine_similarity:
             _, calibration_loader = get_finetune_dataset(args.finetune_data_path, train_batch_size=args.train_batch_size, collate_fn=lambda x: x, shuffle=True)
