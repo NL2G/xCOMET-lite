@@ -68,3 +68,17 @@ Results are usually saved as json reports in `{pruning, quantization, distillati
 - `reduce_results.py` was used to summarize the results of pruning experiments with different random seeds, which were presented in the appendix of the paper.
 - `train.py` was a first version of the script used to train distilled models, which used a simplified traning process.
 - `utils.py` contains a variety of auxilary functions and classes.
+
+## Citation
+
+```
+@misc{larionov2024xcometlitebridginggapefficiency,
+      title={xCOMET-lite: Bridging the Gap Between Efficiency and Quality in Learned MT Evaluation Metrics}, 
+      author={Daniil Larionov and Mikhail Seleznyov and Vasiliy Viskov and Alexander Panchenko and Steffen Eger},
+      year={2024},
+      eprint={2406.14553},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2406.14553}, 
+}
+```
