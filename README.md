@@ -49,7 +49,6 @@ CUDA_VISIBLE_DEVICES=${devices} python prune_finetune.py \
     --structured-pruning-n 4 \
     --structured-pruning-m 8
 ```
-<<<<<<< HEAD
 
 ## Outline of code structure
 
@@ -69,6 +68,3 @@ Results are usually saved as json reports in `{pruning, quantization, distillati
 - `reduce_results.py` was used to summarize the results of pruning experiments with different random seeds, which were presented in the appendix of the paper.
 - `train.py` was a first version of the script used to train distilled models, which used a simplified traning process.
 - `utils.py` contains a variety of auxilary functions and classes.
-=======
-However, it didn't affect anything so far.
->>>>>>> main
