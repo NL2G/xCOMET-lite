@@ -210,16 +210,17 @@ def main():
     # paths are expected to have format 
     # results_dir_name/experiment_name/{training,evaluations}/{no_reference,with_reference}/language_pair/filename
     experiment_name_patterns = [
-        f"{args.videocard}vanilla*",
+        f"{args.videocard}*vanilla*",
         # f"{args.videocard}*mdeberta*",
         # f"{args.videocard}*8bits",
         # f"{args.videocard}*4bits",
         # f"{args.videocard}*3bits",
         # f"{args.videocard}*8_layers",
         # f"{args.videocard}*16_layers"
-        f"{args.videocard}wanda*",
-        f"{args.videocard}prune08layers_finetune6-xl",
-        f"{args.videocard}prune16layers_finetune6-xl",
+        f"{args.videocard}*wanda*",
+        f"{args.videocard}*magnitude*",
+        # f"{args.videocard}prune08layers_finetune6-xl",
+        # f"{args.videocard}prune16layers_finetune6-xl",
     ]
 
     results = pd.concat(
@@ -228,24 +229,27 @@ def main():
     results = results[~results.experiment_name.str.contains("halfbnb_8bits")]
     results = results[~results.experiment_name.str.contains("truebnb_4bits")]
     results = results[~results.experiment_name.str.contains("xl_4bits")]
+    results = results[~results.experiment_name.str.contains("magnitude_4_8-xxl-seed-0")]
+    results = results[~results.experiment_name.str.contains("magnitude_2_4-xxl-seed-0")]
+    results = results[~results.experiment_name.str.contains("magnitude-2-4-xxl-seed-0")]
     
     results = results.sort_values(["model", "setup"])
     print(results)
 
     print("Kendall")
-    print(results.groupby(["model", "experiment_name"], sort=False)["kendall_correlation"].agg(["mean", "std"]).round(3))
+    print(results.groupby(["model", "experiment_name"], sort=False)["kendall_correlation"].agg(["mean", "std", "count"]).round(3))
 
     results["peak_memory_gb"] = np.round(results["peak_memory_mb"].values / 1000, 2)
 
-    # print("Peak Memory")
-    # print(results.groupby(["model", "experiment_name"], sort=False)["peak_memory_gb"].agg(["mean", "max"]).round(2))
+    if "speed" in args.results_dir_name:
+        if "samples_per_second" not in results.columns:
+            results["samples_per_second"] = results["dataset_length"] / results["prediction_time"]
 
-    if "samples_per_second" not in results.columns:
-        results["samples_per_second"] = results["dataset_length"] / results["prediction_time"]
-
-    print("Speed")
-    # print(results.groupby(["model", "experiment_name"], sort=False)[["samples_per_second", "prediction_time"]].agg(["mean", "std"]).round(1))
-    print(results.groupby(["model", "experiment_name"], sort=False)[["samples_per_second", "prediction_time"]].agg(["min", "median", "max"]).round(1))
+        print("Speed")
+        print(results.groupby(["model", "experiment_name"], sort=False)[["samples_per_second", "prediction_time"]].agg(["min", "median", "max", "count"]).round(1))
+    else:
+        print("Peak Memory")
+        print(results.groupby(["model", "experiment_name"], sort=False)["peak_memory_gb"].agg(["mean", "max", "count"]).round(2))
 
 if __name__ == "__main__":
     main()
