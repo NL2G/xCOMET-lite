@@ -15,8 +15,7 @@ import torch.nn as nn
 from datasets import load_dataset
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json
-from source.mqm_dataset import MQMDataset
+from utils import load_json, dump_json, MQMDataset
 
 ###
 # Implemetation scheme:

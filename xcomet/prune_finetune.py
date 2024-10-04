@@ -24,9 +24,8 @@ from torch.cuda.amp import GradScaler
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 from datasets import load_dataset
 
-from source.mqm_dataset import MQMDataset
 from train import train_one_epoch, prepare_sample, compute_loss
-from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup
+from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup, MQMDataset
 from wanda_lib.prune import prune_wanda, check_sparsity, prune_magnitude
 
 def make_parser():
