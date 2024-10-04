@@ -83,11 +83,6 @@ def get_datasets(args, track_time):
     high = np.mean(highest["score"])
     scaled_scores = ((np.array(da_dataset["score"]) - low) / (high - low)).tolist()
 
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(10, 4), dpi=300)
-    # plt.hist(scaled_scores, bins=200)
-    # plt.savefig("scaled_da_score_distribution.png")
-
     da_dataset = da_dataset.remove_columns("score")
     da_dataset = da_dataset.add_column("score", scaled_scores)
 
