@@ -1,5 +1,8 @@
-# efficient-llm-metrics
-Efficient &amp; Open LLM-based metrics for NLG tasks
+# xCOMET-lite
+
+Efficient learned metrics for translation quality evaluation.
+
+[Paper link](https://openreview.net/pdf?id=lWxYx8vt5R)
 
 ## Setup environment
 ```
