@@ -172,7 +172,7 @@ def get_model(args, device):
         model.load_state_dict(torch.load("distillation_results/synthplus-mdeberta-1epoch-2/training/checkpoint.pth"))
     else:
         if args.model.startswith('Unbabel/'):
-            model_path = download_model(args.model)#, saving_directory="/gpfs/bwfor/work/ws/ma_dalarion-models")
+            model_path = download_model(args.model)
         model = load_from_checkpoint(model_path)
 
     if args.prune_n_layers > 0:
