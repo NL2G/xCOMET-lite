@@ -30,6 +30,7 @@ from inference.utils import (
 from onnx_wrapper.xcomet import OnnxXCOMETMetric, OnnxXCOMETModel
 from onnx_wrapper.utils import xcomet_to_onnx
 from inference.utils import logger, get_memory_allocated
+from wanda_lib.prune import prune_wanda, check_sparsity
 
 
 def make_parser():
@@ -49,6 +50,13 @@ def make_parser():
     parser.add_argument("--prune-n-layers", type=int, default=0, help="How many layers to prune")
     parser.add_argument("--quantization-type", choices=["gptq", "bnb"], help="Choose the quantization method")
     parser.add_argument("--quantize-n-bits", type=int, default=0, choices=[2, 3, 4, 8], help="Quantize model into N bits. 0 means no quantization.")
+
+    parser.add_argument("--use-wanda", action="store_true", help="Use Wanda pruning method instead of layer pruning.")
+    parser.add_argument("--nsamples", default=256, help="Number of calibration samples used for Wanda pruning.")
+    parser.add_argument("--use-variant", action="store_true", help="Some other hyperparameter of Wanda pruning.")
+    parser.add_argument("--sparsity-ratio", type=float, default=0.75, help="Sparsity ratio for unstructured pruning.")
+    parser.add_argument("--structured-pruning-n", type=int, default=0, help="n in n:m structured pruning for Wanda.")
+    parser.add_argument("--structured-pruning-m", type=int, default=0, help="m in n:m structured pruning for Wanda.")
 
     return parser
 
@@ -169,6 +177,11 @@ def get_model(args, device):
 
     if args.prune_n_layers > 0:
         model = prune_layers(model, args.prune_n_layers)
+
+    if args.use_wanda:
+        model.seqlen = 512
+        prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+        print("sparsity sanity check: ", check_sparsity(model))
 
     if args.half:
         assert args.onnx_path is None

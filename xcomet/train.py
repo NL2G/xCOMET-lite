@@ -19,8 +19,7 @@ import comet.encoders
 comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json, LengthGroupedSampler
-from source.mqm_dataset import MQMDataset
+from utils import load_json, dump_json, LengthGroupedSampler, MQMDataset
 
 from rich.logging import RichHandler
 from rich.console import Console

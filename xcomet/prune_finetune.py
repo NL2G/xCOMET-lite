@@ -9,6 +9,7 @@ from deberta_encoder import DeBERTaEncoder
 import comet.encoders
 
 comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
+from comet.models.multitask.xcomet_metric import XCOMETMetric
 
 import wandb
 import numpy as np
@@ -24,9 +25,9 @@ from torch.cuda.amp import GradScaler
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 from datasets import load_dataset
 
-from source.mqm_dataset import MQMDataset
 from train import train_one_epoch, prepare_sample, compute_loss
-from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup
+from utils import load_json, dump_json, load_tsv, enable_gradient_checkpointing, CosineAnnealingLRWarmup, MQMDataset
+from wanda_lib.prune import prune_wanda, check_sparsity, prune_magnitude
 
 def make_parser():
     parser = ArgumentParser(description="MQM evaluation.")
@@ -38,7 +39,7 @@ def make_parser():
     parser.add_argument("--seed", type=int, default=0, help="Random seed to fix")
     parser.add_argument("--n-gpus", type=int, default=1, help="Amount of GPUs utilized")
     parser.add_argument("--batch-size", type=int, default=8, help="Evaluation batch size")
-    parser.add_argument("--n-layers-to-prune", type=int, help="Amount of layers to prune", required=True)
+    parser.add_argument("--n-layers-to-prune", type=int, default=0, help="Amount of layers to prune")
     parser.add_argument("--do-finetune", action="store_true", help="If chosen, script only prunes and finetunes the model; otherwise it only evaluates pruned model.")
     parser.add_argument("--model", default="Unbabel/XCOMET-XL", help="Which XCOMET model to load", required=True)
 
@@ -49,6 +50,15 @@ def make_parser():
     parser.add_argument("--warmup-fraction", type=float, default=0.1, help="Relative length of linear warmup stage in cosine learning rate schedule during finetuning")
     parser.add_argument("--learning-rate", type=float, default=1e-4, help="Learning rate for finetuning")
     parser.add_argument("--n-calibration-batches", type=int, default=2000, help="Amount of batches (of train_batch_size size) used to estimate block similarity/importances")
+    parser.add_argument("--enable-gradient-checkpointing", action="store_true", help="Enables gradient checkpointing for XCOMET-XL or XCOMET-XXL. Does not work with other models.")
+
+    parser.add_argument("--encoder-model", default="DeBERTa", help="Backbone family [BERT, XLM-RoBERTa, MiniLM, XLM-RoBERTa-XL, RemBERT]",)
+    parser.add_argument("--pretrained-model", default="microsoft/mdeberta-v3-base", help="Concrete pretrained checkpoint for the backbone (huggingface name)")
+    parser.add_argument("--word-layer", type=int, default=8, help="From which layer of encoder to predict word tags")
+    parser.add_argument("--word-level", type=bool, default=True, help="Whether to use word-level annotations")
+    parser.add_argument("--hidden-sizes", nargs="+", type=int, default=(3072, 1024), help="Size of hidden layers used in regression head",)
+    parser.add_argument("--loss-lambda", type=float, default=0.055, help="Weight assigned to the word-level loss",)
+    parser.add_argument("--checkpoint-path", default="", help="[Optional] Path to a checkpoint with finetuned model weights.")
 
     parser.add_argument(
         "--use-cosine-similarity",
@@ -56,6 +66,15 @@ def make_parser():
         help="If chosen, pruned layers are chosen based by average cosine similarity of their inputs and outputs;" + \
             " otherwise n penultimate layers are pruned. Not recommended for now."
     )
+
+    parser.add_argument("--use-magnitude-pruning", action="store_true", help="Use simple magnitude pruning.")
+
+    parser.add_argument("--use-wanda", action="store_true", help="Use Wanda pruning method instead of layer pruning.")
+    parser.add_argument("--nsamples", default=256, help="Number of calibration samples used for Wanda pruning.")
+    parser.add_argument("--use-variant", action="store_true", help="Some other hyperparameter of Wanda pruning.")
+    parser.add_argument("--sparsity-ratio", type=float, default=0.75, help="Sparsity ratio for unstructured pruning.")
+    parser.add_argument("--structured-pruning-n", type=int, default=0, help="n in n:m structured pruning for Wanda.")
+    parser.add_argument("--structured-pruning-m", type=int, default=0, help="m in n:m structured pruning for Wanda.")
 
     return parser
 
@@ -100,17 +119,17 @@ def get_model(args, track_time):
         model = comet.load_from_checkpoint(model_path)
     else:
         model = XCOMETMetric(
-            encoder_model='DeBERTa',
-            pretrained_model='microsoft/mdeberta-v3-base',
-            word_layer=8,
+            encoder_model=args.encoder_model,
+            pretrained_model=args.pretrained_model,
+            word_layer=args.word_layer,
             validation_data=[],
-            word_level_training=True,
-            hidden_sizes=[
-                3072,
-                1024
-            ]
+            word_level_training=args.word_level,
+            hidden_sizes=args.hidden_sizes,
+            loss_lambda=args.loss_lambda,
         )
-        model.load_state_dict(torch.load(args.model))
+
+    if args.checkpoint_path:
+        model.load_state_dict(torch.load(args.checkpoint_path))
 
     model_load_time = time.perf_counter() - start
 
@@ -234,7 +253,8 @@ def finetune(pruned_model, args, device):
     scaler = GradScaler()
 
     pruned_model.to(device)
-    enable_gradient_checkpointing(pruned_model)
+    if args.enable_gradient_checkpointing:
+        enable_gradient_checkpointing(pruned_model)
 
     pruned_model.word_level = False
     pruned_model.hparams.loss_lambda = 0
@@ -261,7 +281,7 @@ def finetune(pruned_model, args, device):
         plt.savefig(finetune_output_path / "losses.png")
 
 def load_pruned_tuned_model(args):
-    """Loads a model, prunes the layers, and loads finetuned parameters if there is a corresponding checkpoint.
+    """Loads a model, prunes it and loads finetuned parameters if there is a corresponding checkpoint.
     """
     start = time.perf_counter()
     model = get_model(args, track_time=False)
@@ -277,7 +297,15 @@ def load_pruned_tuned_model(args):
     else:
         print("Didn't find specific layers to prune, pruning n penultimate layers.")
         prune_layers(model, args.n_layers_to_prune)
-    
+
+    if args.use_wanda:
+        model.seqlen = 512
+        prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+        print("sparsity sanity check:", check_sparsity(model))
+    elif args.use_magnitude_pruning:
+        prune_magnitude(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+        print("sparsity sanity check:", check_sparsity(model))
+
     if tuned_params_file.exists():
         tuned_params = torch.load(tuned_params_file)
         print(f"N finetuned params found: {sum(p.numel() for p in tuned_params.values())}")
@@ -301,6 +329,7 @@ def main():
     parser = make_parser()
     args = parser.parse_args()
     print(args)
+    assert not (args.use_wanda and args.use_magnitude_pruning), "Can't use Wanda and magnitude pruning at the same time" 
 
 # Setup environment
     torch.set_float32_matmul_precision("medium")
@@ -328,7 +357,14 @@ def main():
         device = "cuda:0"
         model, model_load_time = get_model(args, track_time=True)
 
-        if args.use_cosine_similarity:
+        if args.use_wanda:
+            model.seqlen = 512
+            prune_wanda(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+            print("sparsity sanity check:", check_sparsity(model))
+        elif args.use_magnitude_pruning:
+            prune_magnitude(args, model, model.encoder.tokenizer, prune_n=args.structured_pruning_n, prune_m=args.structured_pruning_m)
+            print("sparsity sanity check:", check_sparsity(model))
+        elif args.use_cosine_similarity:
             _, calibration_loader = get_finetune_dataset(args.finetune_data_path, train_batch_size=args.train_batch_size, collate_fn=lambda x: x, shuffle=True)
             layers_to_prune = find_most_similar_blocks(model, calibration_loader, args.n_layers_to_prune, args.n_calibration_batches, device)
             np.save(output_path / "layers_to_prune.npy", np.array(list(layers_to_prune)))
@@ -343,7 +379,11 @@ def main():
 
 # Run evaluation
     dataset, ground_truth, dataset_load_time = get_dataset(args, track_time=True)
+
     model, model_load_time = load_pruned_tuned_model(args)
+    # Reset peak memory stats, which could be high due to wanda pruning
+    torch.cuda.reset_peak_memory_stats()
+
     model_output, prediction_time = run_metric(model, dataset, args)
 
     segment_scores = np.array(model_output.scores)
