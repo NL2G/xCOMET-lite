@@ -20,8 +20,7 @@ from datasets import load_dataset
 from optimum.gptq import GPTQQuantizer
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json, load_tsv
-from source.mqm_dataset import MQMDataset
+from utils import load_json, dump_json, load_tsv, MQMDataset
 
 def make_parser():
     parser = ArgumentParser(description="MQM evaluation.")

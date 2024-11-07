@@ -4,7 +4,7 @@ import functools
 import numpy as np
 import pandas as pd
 import torch
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Callable
 import gc
 
 from torch.utils.data import Sampler, Dataset
@@ -116,6 +116,21 @@ class LengthGroupedSampler(Sampler):
     def __iter__(self):
         indices = get_length_grouped_indices(self.lengths, self.batch_size, generator=self.generator)
         return iter(indices)
+
+
+class MQMDataset(Dataset):
+    def __init__(self, path: str):
+        self.path = path
+        self.data = pd.read_csv(path)
+    
+    def filter(self, predicate: Callable):
+        self.data = self.data[self.data.apply(predicate, axis=1)]
+
+    def __getitem__(self, index):
+        return self.data.iloc[index].to_dict()
+    
+    def __len__(self):
+        return len(self.data)
 
 
 class CheckpointedXLMRobertaLayer(torch.nn.Module):

@@ -1,0 +1,1 @@
+All code in this folder is copied from https://github.com/locuslab/wanda, and then adapted for XCOMET specifics.

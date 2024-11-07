@@ -15,8 +15,7 @@ import torch.nn as nn
 from datasets import load_dataset
 from comet.models.multitask.xcomet_metric import XCOMETMetric
 
-from utils import load_json, dump_json
-from source.mqm_dataset import MQMDataset
+from utils import load_json, dump_json, MQMDataset
 
 ###
 # Implemetation scheme:
@@ -83,11 +82,6 @@ def get_datasets(args, track_time):
     low = np.mean(lowest["score"])
     high = np.mean(highest["score"])
     scaled_scores = ((np.array(da_dataset["score"]) - low) / (high - low)).tolist()
-
-    # import matplotlib.pyplot as plt
-    # plt.figure(figsize=(10, 4), dpi=300)
-    # plt.hist(scaled_scores, bins=200)
-    # plt.savefig("scaled_da_score_distribution.png")
 
     da_dataset = da_dataset.remove_columns("score")
     da_dataset = da_dataset.add_column("score", scaled_scores)
