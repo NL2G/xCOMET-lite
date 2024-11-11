@@ -14,7 +14,7 @@ conda activate metric
 # to use GPTQ quantization
 pip install auto-gptq==0.5.1
 pip install optimum==1.14.1 accelerate==0.24.1
-pip install --upgrade git+https://github.com/huggingface/transformers.git
+pip install transformers
 
 # to use BnB quantization
 pip install bitsandbytes
@@ -32,6 +32,9 @@ pip install jupyterlab==4.0.9 matplotlib rich
 
 # Onnx for speeding up
 pip install onnxruntime
+
+# Workaround for tokenizers
+pip install protobuf==3.20
 ```
 
 ## Quick start
@@ -77,6 +80,7 @@ CUDA_VISIBLE_DEVICES=${devices} python prune_finetune.py \
     --structured-pruning-n 4 \
     --structured-pruning-m 8
 ```
+from `xcomet` subdirectory.
 
 Other experiments can be reproduced similarly.
 
