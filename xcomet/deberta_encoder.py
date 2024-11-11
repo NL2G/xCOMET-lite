@@ -3,6 +3,7 @@ from typing import Optional
 import torch
 from torch import nn
 import transformers as tr
+from huggingface_hub import PyTorchModelHubMixin
 
 from comet.encoders.base import Encoder
 from comet.encoders.bert import BERTEncoder
@@ -113,3 +114,34 @@ class DeBERTaEncoder(BERTEncoder):
             "all_layers": model_output.hidden_states,
             "attention_mask": attention_mask,
         }
+
+
+import comet.encoders
+comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
+from comet.models.multitask.xcomet_metric import XCOMETMetric
+
+
+class XCOMETLite(XCOMETMetric, PyTorchModelHubMixin):
+    """A wrapper to push xCOMET-Lite model to huggingface."""
+    def __init__(
+            self,
+            encoder_model="DeBERTa",
+            pretrained_model="microsoft/mdeberta-v3-base",
+            word_layer=8,
+            validation_data=[],
+            word_level_training=True,
+            hidden_sizes=(3072, 1024),
+            load_pretrained_weights=False,
+            *args,
+            **kwargs):
+        super().__init__(
+            encoder_model=encoder_model,
+            pretrained_model=pretrained_model,
+            word_layer=word_layer,
+            validation_data=validation_data,
+            word_level_training=word_level_training,
+            hidden_sizes=hidden_sizes,
+            load_pretrained_weights=load_pretrained_weights,
+            *args,
+            **kwargs
+        )
