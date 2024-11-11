@@ -1,4 +1,6 @@
-# [xCOMET-lite](https://openreview.net/pdf?id=lWxYx8vt5R)
+# xCOMET-lite
+
+[EMNLP 2024](https://aclanthology.org/2024.emnlp-main.1223/) | [Arxiv](https://arxiv.org/abs/2406.14553) | [Distilled model on HF](https://huggingface.co/myyycroft/XCOMET-lite)
 
 Efficient learned metrics for translation quality evaluation.
 
@@ -12,7 +14,7 @@ conda activate metric
 # to use GPTQ quantization
 pip install auto-gptq==0.5.1
 pip install optimum==1.14.1 accelerate==0.24.1
-pip install --upgrade git+https://github.com/huggingface/transformers.git
+pip install transformers
 
 # to use BnB quantization
 pip install bitsandbytes
@@ -30,9 +32,38 @@ pip install jupyterlab==4.0.9 matplotlib rich
 
 # Onnx for speeding up
 pip install onnxruntime
+
+# Workaround for tokenizers
+pip install protobuf==3.20
 ```
 
 ## Quick start
+
+To try out xCOMET-lite, run the following code:
+
+```
+from xcomet.deberta_encoder import XCOMETLite
+
+model = XCOMETLite().from_pretrained("myyycroft/XCOMET-lite")
+data = [
+    {
+        "src": "Elon Musk has acquired Twitter and plans significant changes.",
+        "mt": "Илон Маск приобрел Twitter и планировал значительные искажения.",
+        "ref": "Илон Маск приобрел Twitter и планирует значительные изменения."
+    },
+    {
+        "src": "Elon Musk has acquired Twitter and plans significant changes.",
+        "mt": "Илон Маск приобрел Twitter.",
+        "ref": "Илон Маск приобрел Twitter и планирует значительные изменения."
+    }
+]
+
+model_output = model.predict(data, batch_size=2, gpus=1)
+
+print("Segment-level scores:", model_output.scores)
+```
+
+## Pruning experiments
 
 To run magnitude pruning with 4:8 sparsity pattern on English-Russian language pair for XCOMET-XL model, run
 ```
@@ -49,11 +80,14 @@ CUDA_VISIBLE_DEVICES=${devices} python prune_finetune.py \
     --structured-pruning-n 4 \
     --structured-pruning-m 8
 ```
+from `xcomet` subdirectory.
+
+Other experiments can be reproduced similarly.
 
 ## Outline of code structure
 
 There are three main scripts:
-- `eval.py` is used to evaluate compressed models throughput. Supports quantization, pruning and loading of distilled models.
+- `eval.py` is used to evaluate compressed models quality and throughput. Supports quantization, pruning and loading distilled models.
 - `prune_finetune.py` has two modes, depending on the `--do-finetune` flag.
   - If the flag is set, the script prunes, finetunes and saves the model (more concretely, it only saves the small subset of parameters which were finetuned).
   - If the flag is not set, the script prunes, tries to load finetuned parameters and runs evaluation.
@@ -62,7 +96,7 @@ There are three main scripts:
 Results are usually saved as json reports in `{pruning, quantization, distillation, speed}_results` directories. To get summarized results, run `aggregate_results.py`.
 
 #### Other scripts:
-- `deberta_encoder.py` contains an implementation of DeBERTa encoder, which was used as a backbone for distilled model.
+- `deberta_encoder.py` contains an implementation of DeBERTa encoder, which was used as a backbone for distilled model, and a wrapper for XCOMET-lite model.
 - `eval_checkpoint.py` was initially used to evaluate distilled models, until it was supported in `eval.py`.
 - `merge_mqm_and_error_spans.ipynb` was used to prepare the finetuning dataset for `prune_finetune.py` script.
 - `reduce_results.py` was used to summarize the results of pruning experiments with different random seeds, which were presented in the appendix of the paper.
