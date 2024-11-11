@@ -5,7 +5,7 @@ from functools import partial
 from pathlib import Path
 from argparse import ArgumentParser
 from typing import Optional
-from deberta_encoder import DeBERTaEncoder
+from deberta_encoder import DeBERTaEncoder, XCOMETLite
 import comet.encoders
 
 comet.encoders.str2encoder["DeBERTa"] = DeBERTaEncoder
@@ -156,20 +156,8 @@ def get_model(args, device):
     start = time.perf_counter()
 
     model_path = args.model
-    if model_path == "mdeberta":
-        model = XCOMETMetric(
-            encoder_model='DeBERTa',
-            pretrained_model='microsoft/mdeberta-v3-base',
-            word_layer=8,
-            validation_data=[],
-            word_level_training=True,
-            hidden_sizes=[
-                3072,
-                1024
-            ],
-            load_pretrained_weights=False,
-        )
-        model.load_state_dict(torch.load("distillation_results/synthplus-mdeberta-1epoch-2/training/checkpoint.pth"))
+    if model_path == "mdeberta" or model_path == "myyycroft/XCOMET-lite":
+        model = XCOMETLite.from_pretrained("myyycroft/XCOMET-lite")
     else:
         if args.model.startswith('Unbabel/'):
             model_path = download_model(args.model)
@@ -279,7 +267,7 @@ def main():
         "dataset_length": get_number_of_points(dataset),
     }
     report = report | vars(args)
-    # If batch size was selected, update it
+    # If batch size was selected with `get_batch_size`, update it
     report["batch_size"] = batch_size
     report = report | {
         "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
