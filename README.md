@@ -85,7 +85,7 @@ CUDA_VISIBLE_DEVICES=${devices} python eval.py \
 from `xcomet` subdirectory.
 
 > [!TIP]
-> If you want to use quantized version of XCOMET in your code, you can just copy `quantize_model_gptq` function and make sure you imported `GPTQQuantizer` from `optimum.gptq`.
+> If you want to use quantized version of XCOMET in your code, you can just copy `quantize_model_gptq` function from `eval.py` and make sure you imported `GPTQQuantizer` from `optimum.gptq`.
 
 ## Pruning experiments
 
