@@ -177,7 +177,7 @@ def get_model(args, device):
     if args.quantization_type is not None:
         # assert not args.half, "At most one of --half and --quantize-n-bits must be specified"
         # assert args.quantize_n_bits in available_bitwidths, f"Can only quantize into {available_bitwidths} bits"
-        # model.to(device)
+        model.to(device)
         model, _ = quantize_model(args.quantization_type, model, args.quantize_n_bits)
 
     model.eval()
