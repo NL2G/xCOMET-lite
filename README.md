@@ -63,6 +63,30 @@ model_output = model.predict(data, batch_size=2, gpus=1)
 print("Segment-level scores:", model_output.scores)
 ```
 
+## Quantization experiments
+
+To run GPTq quantization to 3 bits on English-Russian language pair for XCOMET-XL model, run
+
+```
+devices="0"
+model="Unbabel/XCOMET-XL"
+exp_name="xl_gptq_3bit"
+
+CUDA_VISIBLE_DEVICES=${devices} python eval.py \
+    -o quantization_results/${exp_name}/ \
+    --lp en-ru \
+    --dataset RicardoRei/wmt-mqm-human-evaluation \
+    --model ${model} \
+    --quantization-type gptq \
+    --quantize-n-bits 3 \
+    --half \
+    --gpu
+```
+from `xcomet` subdirectory.
+
+> [!TIP]
+> If you want to use quantized version of XCOMET in your code, you can just copy `quantize_model_gptq` function and make sure you imported `GPTQQuantizer` from `optimum.gptq`.
+
 ## Pruning experiments
 
 To run magnitude pruning with 4:8 sparsity pattern on English-Russian language pair for XCOMET-XL model, run
