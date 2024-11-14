@@ -106,7 +106,7 @@ CUDA_VISIBLE_DEVICES=${devices} python prune_finetune.py \
 ```
 from `xcomet` subdirectory.
 
-Other experiments can be reproduced similarly.
+Other experiments can be reproduced similarly. You can find more in `xcomet/scripts` directory.
 
 ## Outline of code structure
 
