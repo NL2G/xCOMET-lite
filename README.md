@@ -130,13 +130,25 @@ Results are usually saved as json reports in `{pruning, quantization, distillati
 ## Citation
 
 ```
-@misc{larionov2024xcometlitebridginggapefficiency,
-      title={xCOMET-lite: Bridging the Gap Between Efficiency and Quality in Learned MT Evaluation Metrics}, 
-      author={Daniil Larionov and Mikhail Seleznyov and Vasiliy Viskov and Alexander Panchenko and Steffen Eger},
-      year={2024},
-      eprint={2406.14553},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2406.14553}, 
+@inproceedings{larionov-etal-2024-xcomet,
+    title = "x{COMET}-lite: Bridging the Gap Between Efficiency and Quality in Learned {MT} Evaluation Metrics",
+    author = "Larionov, Daniil  and
+      Seleznyov, Mikhail  and
+      Viskov, Vasiliy  and
+      Panchenko, Alexander  and
+      Eger, Steffen",
+    editor = "Al-Onaizan, Yaser  and
+      Bansal, Mohit  and
+      Chen, Yun-Nung",
+    booktitle = "Proceedings of the 2024 Conference on Empirical Methods in Natural Language Processing",
+    month = nov,
+    year = "2024",
+    address = "Miami, Florida, USA",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2024.emnlp-main.1223",
+    pages = "21934--21949",
+    abstract = "State-of-the-art trainable machine translation evaluation metrics like xCOMET achieve high correlation with human judgment but rely on large encoders (up to 10.7B parameters), making them computationally expensive and inaccessible to researchers with limited resources. To address this issue, we investigate whether the knowledge stored in these large encoders can be compressed while maintaining quality. We employ distillation, quantization, and pruning techniques to create efficient xCOMET alternatives and introduce a novel data collection pipeline for efficient black-box distillation. Our experiments show that, using quantization, xCOMET can be compressed up to three times with no quality degradation. Additionally, through distillation, we create an 278M-sized xCOMET-lite metric, which has only 2.6{\%} of xCOMET-XXL parameters, but retains 92.1{\%} of its quality. Besides, it surpasses strong small-scale metrics like COMET-22 and BLEURT-20 on the WMT22 metrics challenge dataset by 6.4{\%}, despite using 50{\%} fewer parameters. All code, dataset, and models are available online.",
 }
 ```
+
+'````
