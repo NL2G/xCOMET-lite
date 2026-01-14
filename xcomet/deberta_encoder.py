@@ -38,12 +38,16 @@ class DebertaV2LayerPatched(DebertaV2Layer):
         )
         if output_attentions:
             attention_output, att_matrix = attention_output
+        elif isinstance(attention_output, tuple):
+            attention_output = attention_output[0]
+            att_matrix = None
+        else:
+            att_matrix = None
         intermediate_output = self.intermediate(attention_output)
         layer_output = self.output(intermediate_output, attention_output)
-        if output_attentions:
-            return (layer_output, att_matrix)
-        else:
-            return layer_output
+        return (layer_output, att_matrix)
+
+
 
 
 class DeBERTaEncoder(BERTEncoder):
@@ -79,7 +83,7 @@ class DeBERTaEncoder(BERTEncoder):
 
     @classmethod
     def from_pretrained(
-        cls, pretrained_model: str, load_pretrained_weights: bool = True
+        cls, pretrained_model: str, load_pretrained_weights: bool = True, local_files_only: bool = False
     ) -> Encoder:
         """Function that loads a pretrained encoder from Hugging Face.
 
